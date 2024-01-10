@@ -19,25 +19,6 @@ pub(crate) enum Node<K, V> {
     },
 }
 
-impl<K, V> Drop for Node<K, V> {
-    fn drop(&mut self) {
-        match self {
-            Node::Internal {
-                keys: _,
-                children,
-                parent: _,
-            } => {
-                for child in children {
-                    unsafe {
-                        let _ = Box::from_raw(child.as_ptr());
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
 impl<K, V> Debug for Node<K, V>
 where
     K: Debug,

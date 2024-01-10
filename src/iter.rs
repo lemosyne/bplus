@@ -26,33 +26,31 @@ impl<'a, K, V> Iterator for Iter<'a, K, V> {
     fn next(&mut self) -> Option<Self::Item> {
         (self.len > 0)
             .then(|| {
-                self.cursor
-                    .map(|node| unsafe {
-                        if let Node::Leaf {
-                            keys,
-                            values,
-                            parent: _,
-                            next_leaf,
-                            prev_leaf: _,
-                        } = &(*node.as_ptr())
-                        {
-                            let result = Some((&keys[self.index], &values[self.index]));
+                self.cursor.and_then(|node| unsafe {
+                    if let Node::Leaf {
+                        keys,
+                        values,
+                        parent: _,
+                        next_leaf,
+                        prev_leaf: _,
+                    } = &(*node.as_ptr())
+                    {
+                        let result = Some((&keys[self.index], &values[self.index]));
 
-                            // Advance in the index in the node, moving to
-                            // the next leaf if we've hit the end.
-                            self.index += 1;
-                            if self.index >= keys.len() {
-                                self.index = 0;
-                                self.cursor = *next_leaf;
-                            }
-
-                            self.len -= 1;
-                            result
-                        } else {
-                            None
+                        // Advance in the index in the node, moving to
+                        // the next leaf if we've hit the end.
+                        self.index += 1;
+                        if self.index >= keys.len() {
+                            self.index = 0;
+                            self.cursor = *next_leaf;
                         }
-                    })
-                    .flatten()
+
+                        self.len -= 1;
+                        result
+                    } else {
+                        None
+                    }
+                })
             })
             .flatten()
     }
@@ -90,33 +88,31 @@ impl<'a, K, V> Iterator for IterMut<'a, K, V> {
     fn next(&mut self) -> Option<Self::Item> {
         (self.len > 0)
             .then(|| {
-                self.cursor
-                    .map(|node| unsafe {
-                        if let Node::Leaf {
-                            keys,
-                            values,
-                            parent: _,
-                            next_leaf,
-                            prev_leaf: _,
-                        } = &mut (*node.as_ptr())
-                        {
-                            let result = Some((&keys[self.index], &mut values[self.index]));
+                self.cursor.and_then(|node| unsafe {
+                    if let Node::Leaf {
+                        keys,
+                        values,
+                        parent: _,
+                        next_leaf,
+                        prev_leaf: _,
+                    } = &mut (*node.as_ptr())
+                    {
+                        let result = Some((&keys[self.index], &mut values[self.index]));
 
-                            // Advance in the index in the node, moving to
-                            // the next leaf if we've hit the end.
-                            self.index += 1;
-                            if self.index >= keys.len() {
-                                self.index = 0;
-                                self.cursor = *next_leaf;
-                            }
-
-                            self.len -= 1;
-                            result
-                        } else {
-                            None
+                        // Advance in the index in the node, moving to
+                        // the next leaf if we've hit the end.
+                        self.index += 1;
+                        if self.index >= keys.len() {
+                            self.index = 0;
+                            self.cursor = *next_leaf;
                         }
-                    })
-                    .flatten()
+
+                        self.len -= 1;
+                        result
+                    } else {
+                        None
+                    }
+                })
             })
             .flatten()
     }
