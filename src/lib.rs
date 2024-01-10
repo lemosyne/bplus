@@ -44,33 +44,33 @@ impl<K, V> BPTreeMap<K, V> {
                 let mut cursor = root;
 
                 unsafe {
-                    while let Node::Internal {
-                        keys,
-                        children,
-                        parent: _,
-                    } = &(*cursor.as_ptr())
-                    {
-                        let index = match keys.binary_search_by(|probe| probe.borrow().cmp(key)) {
-                            Ok(index) => index,
-                            Err(index) => index,
-                        };
-
-                        cursor = children[index];
-                    }
-
-                    if let Node::Leaf {
-                        keys,
-                        values,
-                        parent: _,
-                        next_leaf: _,
-                        prev_leaf: _,
-                    } = &(*cursor.as_ptr())
-                    {
-                        keys.binary_search_by(|probe| probe.borrow().cmp(key))
-                            .map(|index| &values[index])
-                            .ok()
-                    } else {
-                        None
+                    loop {
+                        match &(*cursor.as_ptr()) {
+                            Node::Internal {
+                                keys,
+                                children,
+                                parent: _,
+                            } => {
+                                let index =
+                                    match keys.binary_search_by(|probe| probe.borrow().cmp(key)) {
+                                        Ok(index) => index,
+                                        Err(index) => index,
+                                    };
+                                cursor = children[index];
+                            }
+                            Node::Leaf {
+                                keys,
+                                values,
+                                parent: _,
+                                next_leaf: _,
+                                prev_leaf: _,
+                            } => {
+                                return keys
+                                    .binary_search_by(|probe| probe.borrow().cmp(key))
+                                    .map(|index| &values[index])
+                                    .ok()
+                            }
+                        }
                     }
                 }
             })
