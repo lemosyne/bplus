@@ -1,6 +1,12 @@
+mod iter;
+mod node;
+
+use iter::{Iter, IterMut, Keys, Values, ValuesMut};
+use node::{Link, Node};
 use std::{
     borrow::Borrow,
     fmt::{self, Debug},
+    marker::PhantomData,
     mem,
     ptr::NonNull,
 };
@@ -36,13 +42,12 @@ impl<K, V> BPTreeMap<K, V> {
 
     pub fn get<Q>(&self, key: &Q) -> Option<&V>
     where
-        K: Borrow<Q> + Ord,
+        K: Borrow<Q>,
         Q: Ord,
     {
         self.root
             .map(|root| {
                 let mut cursor = root;
-
                 unsafe {
                     loop {
                         match &(*cursor.as_ptr()) {
@@ -83,7 +88,6 @@ impl<K, V> BPTreeMap<K, V> {
     {
         if let Some(root) = self.root {
             let mut cursor = root;
-
             unsafe {
                 // Descend the tree to the leaf node that the key should go in.
                 loop {
@@ -298,12 +302,145 @@ impl<K, V> BPTreeMap<K, V> {
         }
     }
 
-    pub fn remove<Q>(&mut self, _key: Q) -> Option<V>
+    pub fn remove_entry<Q>(&mut self, key: &Q) -> Option<(K, V)>
     where
         K: Borrow<Q>,
         Q: Ord,
     {
-        unimplemented!()
+        self.root
+            .map(|root| {
+                let mut cursor = root;
+                unsafe {
+                    loop {
+                        match &mut (*cursor.as_ptr()) {
+                            Node::Internal {
+                                keys,
+                                children,
+                                parent: _,
+                            } => {
+                                let index =
+                                    match keys.binary_search_by(|probe| probe.borrow().cmp(key)) {
+                                        Ok(index) => index,
+                                        Err(index) => index,
+                                    };
+                                cursor = children[index];
+                            }
+                            Node::Leaf {
+                                keys,
+                                values,
+                                parent,
+                                next_leaf,
+                                prev_leaf,
+                            } => {
+                                let index = keys
+                                    .binary_search_by(|probe| probe.borrow().cmp(key))
+                                    .ok()?;
+
+                                let key = keys.remove(index);
+                                let value = values.remove(index);
+
+                                if keys.len() < self.order / 2 {
+                                    // The leaf node is now underfull.
+                                }
+
+                                self.len -= 1;
+                                break Some((key, value));
+                            }
+                        }
+                    }
+                }
+            })
+            .flatten()
+    }
+
+    // fn remove_entry_
+
+    pub fn iter(&self) -> Iter<K, V> {
+        if let Some(root) = self.root {
+            let mut cursor = root;
+            unsafe {
+                loop {
+                    match &(*cursor.as_ptr()) {
+                        Node::Internal {
+                            keys: _,
+                            children,
+                            parent: _,
+                        } => cursor = children[0],
+                        Node::Leaf {
+                            keys: _,
+                            values: _,
+                            parent: _,
+                            next_leaf: _,
+                            prev_leaf: _,
+                        } => {
+                            break Iter {
+                                cursor: Some(cursor),
+                                index: 0,
+                                len: self.len,
+                                _pd: PhantomData,
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            Iter {
+                cursor: None,
+                index: 0,
+                len: 0,
+                _pd: PhantomData,
+            }
+        }
+    }
+
+    pub fn iter_mut(&self) -> IterMut<K, V> {
+        if let Some(root) = self.root {
+            let mut cursor = root;
+            unsafe {
+                loop {
+                    match &(*cursor.as_ptr()) {
+                        Node::Internal {
+                            keys: _,
+                            children,
+                            parent: _,
+                        } => cursor = children[0],
+                        Node::Leaf {
+                            keys: _,
+                            values: _,
+                            parent: _,
+                            next_leaf: _,
+                            prev_leaf: _,
+                        } => {
+                            break IterMut {
+                                cursor: Some(cursor),
+                                index: 0,
+                                len: self.len,
+                                _pd: PhantomData,
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            IterMut {
+                cursor: None,
+                index: 0,
+                len: 0,
+                _pd: PhantomData,
+            }
+        }
+    }
+
+    pub fn keys(&self) -> Keys<K, V> {
+        Keys(self.iter())
+    }
+
+    pub fn values(&self) -> Values<K, V> {
+        Values(self.iter())
+    }
+
+    pub fn values_mut(&mut self) -> ValuesMut<K, V> {
+        ValuesMut(self.iter_mut())
     }
 }
 
@@ -331,97 +468,6 @@ where
     }
 }
 
-enum Node<K, V> {
-    Internal {
-        keys: Vec<K>,
-        children: Vec<Link<K, V>>,
-        parent: Option<Link<K, V>>,
-    },
-    Leaf {
-        keys: Vec<K>,
-        values: Vec<V>,
-        parent: Option<Link<K, V>>,
-        next_leaf: Option<Link<K, V>>,
-        prev_leaf: Option<Link<K, V>>,
-    },
-}
-
-impl<K, V> Drop for Node<K, V> {
-    fn drop(&mut self) {
-        match self {
-            Node::Internal {
-                keys: _,
-                children,
-                parent: _,
-            } => {
-                for child in children {
-                    unsafe {
-                        let _ = Box::from_raw(child.as_ptr());
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-impl<K, V> Debug for Node<K, V>
-where
-    K: Debug,
-    V: Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fn recursive_fmt<K: Debug, V>(
-            node: &Node<K, V>,
-            f: &mut fmt::Formatter<'_>,
-            depth: usize,
-            last: bool,
-        ) -> fmt::Result {
-            write!(f, "{}", "    ".repeat(depth))?;
-
-            match node {
-                Node::Internal {
-                    keys,
-                    children,
-                    parent: _,
-                } => {
-                    writeln!(f, "{:?}", keys)?;
-
-                    unsafe {
-                        for (i, child) in children.iter().enumerate() {
-                            recursive_fmt(
-                                &(*child.as_ptr()),
-                                f,
-                                depth + 1,
-                                i + 1 == children.len() && last,
-                            )?;
-                        }
-                    }
-
-                    Ok(())
-                }
-                Node::Leaf {
-                    keys,
-                    values: _,
-                    parent: _,
-                    next_leaf: _,
-                    prev_leaf: _,
-                } => {
-                    if last {
-                        write!(f, "{:?}", keys)
-                    } else {
-                        writeln!(f, "{:?}", keys)
-                    }
-                }
-            }
-        }
-
-        recursive_fmt(self, f, 0, true)
-    }
-}
-
-type Link<K, V> = NonNull<Node<K, V>>;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -434,6 +480,10 @@ mod tests {
             tree.insert(n, ());
             println!("Insert {n}:");
             println!("{:?}", tree);
+        }
+
+        for n in tree.iter() {
+            println!("{n:?}");
         }
     }
 }
