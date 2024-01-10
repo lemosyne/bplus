@@ -338,12 +338,156 @@ impl<K, V> BPTreeMap<K, V> {
 
                                 let key = keys.remove(index);
                                 let value = values.remove(index);
+                                self.len -= 1;
 
-                                if keys.len() < self.order / 2 {
-                                    // The leaf node is now underfull.
+                                // We might have an underfull non-root leaf node.
+                                if keys.len() < self.order / 2 && Some(cursor) != self.root {
+                                    // Check if the left sibling has any extra keys.
+                                    if let Some(left_sibling) = prev_leaf {
+                                        if let Node::Leaf {
+                                            keys: left_sibling_keys,
+                                            values: left_sibling_values,
+                                            parent: _,
+                                            next_leaf: _,
+                                            prev_leaf: _,
+                                        } = &mut (*left_sibling.as_ptr())
+                                        {
+                                            if left_sibling_keys.len() > self.order / 2 {
+                                                // We want the max key/value
+                                                // pair from the left sibling.
+                                                let max_key = left_sibling_keys.pop().unwrap();
+                                                let max_value = left_sibling_values.pop().unwrap();
+
+                                                // The max key/value pair from
+                                                // the left sibling is smaller
+                                                // than any key/value in the
+                                                // cursor node.
+                                                keys.insert(0, max_key);
+                                                values.insert(0, max_value);
+
+                                                // Update parent key.
+                                                todo!();
+
+                                                break Some((key, value));
+                                            }
+                                        }
+                                    }
+
+                                    // Check if the right sibling has any extra keys.
+                                    if let Some(right_sibling) = next_leaf {
+                                        if let Node::Leaf {
+                                            keys: right_sibling_keys,
+                                            values: right_sibling_values,
+                                            parent: _,
+                                            next_leaf: _,
+                                            prev_leaf: _,
+                                        } = &mut (*right_sibling.as_ptr())
+                                        {
+                                            if right_sibling_keys.len() > self.order / 2 {
+                                                // We want the min key/value
+                                                // pair from the right sibling.
+                                                let min_key = right_sibling_keys.remove(0);
+                                                let min_value = right_sibling_values.remove(0);
+
+                                                // The min key/value pair from
+                                                // the left sibling is larger
+                                                // than any key/value in the
+                                                // cursor node.
+                                                keys.push(min_key);
+                                                values.push(min_value);
+
+                                                // Update parent key.
+                                                todo!();
+
+                                                break Some((key, value));
+                                            }
+                                        }
+                                    }
+
+                                    // Check if we can merge with the left
+                                    // sibling.
+                                    if let Some(left_sibling) = prev_leaf {
+                                        if let Node::Leaf {
+                                            keys: left_sibling_keys,
+                                            values: left_sibling_values,
+                                            parent: _,
+                                            next_leaf: left_sibling_next_leaf,
+                                            prev_leaf: _,
+                                        } = &mut (*left_sibling.as_ptr())
+                                        {
+                                            // Take/merge in the keys and values.
+                                            left_sibling_keys.extend(keys.drain(..));
+                                            left_sibling_values.extend(values.drain(..));
+
+                                            // Relink the left sibling.
+                                            *left_sibling_next_leaf = next_leaf
+                                                .map(|node| {
+                                                    if let Node::Leaf {
+                                                        keys: _,
+                                                        values: _,
+                                                        parent: _,
+                                                        next_leaf: _,
+                                                        prev_leaf,
+                                                    } = &mut (*node.as_ptr())
+                                                    {
+                                                        *prev_leaf = Some(*left_sibling);
+                                                        Some(node)
+                                                    } else {
+                                                        None
+                                                    }
+                                                })
+                                                .flatten();
+
+                                            // Remove the split key.
+                                            todo!();
+
+                                            // Re-`Box` the cursor node to drop it.
+                                            let _ = Box::from_raw(cursor.as_ptr());
+                                        }
+                                    }
+
+                                    // Check if we can merge with the right // sibling.
+                                    if let Some(right_sibling) = next_leaf {
+                                        if let Node::Leaf {
+                                            keys: right_sibling_keys,
+                                            values: right_sibling_values,
+                                            parent: _,
+                                            next_leaf: _,
+                                            prev_leaf: right_sibling_prev_leaf,
+                                        } = &mut (*right_sibling.as_ptr())
+                                        {
+                                            // Take/merge in the keys and // values.
+                                            right_sibling_keys.splice(..0, keys.drain(..));
+                                            right_sibling_values.splice(..0, values.drain(..));
+
+                                            // Relink the right sibling.
+                                            *right_sibling_prev_leaf = prev_leaf
+                                                .map(|node| {
+                                                    if let Node::Leaf {
+                                                        keys: _,
+                                                        values: _,
+                                                        parent: _,
+                                                        next_leaf,
+                                                        prev_leaf: _,
+                                                    } = &mut (*node.as_ptr())
+                                                    {
+                                                        *next_leaf = Some(*right_sibling);
+                                                        Some(node)
+                                                    } else {
+                                                        None
+                                                    }
+                                                })
+                                                .flatten();
+
+                                            // Remove the split key.
+                                            todo!();
+
+                                            // Re-`Box` the cursor node to drop it.
+                                            let _ = Box::from_raw(cursor.as_ptr());
+                                        }
+                                    }
                                 }
 
-                                self.len -= 1;
                                 break Some((key, value));
                             }
                         }
@@ -353,7 +497,13 @@ impl<K, V> BPTreeMap<K, V> {
             .flatten()
     }
 
-    // fn remove_entry_
+    fn remove_entry_internal<Q>(&mut self, key: &Q, cursor: Link<K, V>, child: Link<K, V>)
+    where
+        K: Borrow<Q>,
+        Q: Ord,
+    {
+        unimplemented!()
+    }
 
     pub fn iter(&self) -> Iter<K, V> {
         if let Some(root) = self.root {
