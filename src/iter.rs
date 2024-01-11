@@ -27,22 +27,15 @@ impl<'a, K, V> Iterator for Iter<'a, K, V> {
         (self.len > 0)
             .then(|| {
                 self.cursor.and_then(|node| unsafe {
-                    if let Node::Leaf {
-                        keys,
-                        values,
-                        parent: _,
-                        next_leaf,
-                        prev_leaf: _,
-                    } = &(*node.as_ptr())
-                    {
-                        let result = Some((&keys[self.index], &values[self.index]));
+                    if let Node::Leaf(node) = &(*node.as_ptr()) {
+                        let result = Some((&node.keys[self.index], &node.values[self.index]));
 
                         // Advance in the index in the node, moving to
                         // the next leaf if we've hit the end.
                         self.index += 1;
-                        if self.index >= keys.len() {
+                        if self.index >= node.keys.len() {
                             self.index = 0;
-                            self.cursor = *next_leaf;
+                            self.cursor = node.next_leaf;
                         }
 
                         self.len -= 1;
@@ -89,22 +82,15 @@ impl<'a, K, V> Iterator for IterMut<'a, K, V> {
         (self.len > 0)
             .then(|| {
                 self.cursor.and_then(|node| unsafe {
-                    if let Node::Leaf {
-                        keys,
-                        values,
-                        parent: _,
-                        next_leaf,
-                        prev_leaf: _,
-                    } = &mut (*node.as_ptr())
-                    {
-                        let result = Some((&keys[self.index], &mut values[self.index]));
+                    if let Node::Leaf(node) = &mut (*node.as_ptr()) {
+                        let result = Some((&node.keys[self.index], &mut node.values[self.index]));
 
                         // Advance in the index in the node, moving to
                         // the next leaf if we've hit the end.
                         self.index += 1;
-                        if self.index >= keys.len() {
+                        if self.index >= node.keys.len() {
                             self.index = 0;
-                            self.cursor = *next_leaf;
+                            self.cursor = node.next_leaf;
                         }
 
                         self.len -= 1;

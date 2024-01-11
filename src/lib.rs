@@ -2,7 +2,7 @@ mod iter;
 mod node;
 
 use iter::{Iter, IterMut, Keys, Values, ValuesMut};
-use node::{Link, Node};
+use node::{Internal, Leaf, Link, Node};
 use std::{
     borrow::Borrow,
     fmt::{self, Debug},
@@ -45,39 +45,28 @@ impl<K, V> BPTreeMap<K, V> {
         K: Borrow<Q>,
         Q: Ord,
     {
-        self.root.and_then(|root| {
-            let mut cursor = root;
-            unsafe {
-                loop {
-                    match &(*cursor.as_ptr()) {
-                        Node::Internal {
-                            keys,
-                            children,
-                            parent: _,
-                        } => {
-                            let index = match keys.binary_search_by(|probe| probe.borrow().cmp(key))
-                            {
+        let mut cursor = self.root?;
+        unsafe {
+            loop {
+                match &(*cursor.as_ptr()) {
+                    Node::Internal(node) => {
+                        let index =
+                            match node.keys.binary_search_by(|probe| probe.borrow().cmp(key)) {
                                 Ok(index) => index + 1,
                                 Err(index) => index,
                             };
-                            cursor = children[index];
-                        }
-                        Node::Leaf {
-                            keys,
-                            values,
-                            parent: _,
-                            next_leaf: _,
-                            prev_leaf: _,
-                        } => {
-                            return keys
-                                .binary_search_by(|probe| probe.borrow().cmp(key))
-                                .map(|index| &values[index])
-                                .ok()
-                        }
+                        cursor = node.children[index];
+                    }
+                    Node::Leaf(node) => {
+                        return node
+                            .keys
+                            .binary_search_by(|probe| probe.borrow().cmp(key))
+                            .map(|index| &node.values[index])
+                            .ok()
                     }
                 }
             }
-        })
+        }
     }
 
     pub fn insert(&mut self, key: K, mut value: V) -> Option<V>
@@ -90,104 +79,75 @@ impl<K, V> BPTreeMap<K, V> {
                 // Descend the tree to the leaf node that the key should go in.
                 loop {
                     match &mut (*cursor.as_ptr()) {
-                        Node::Internal {
-                            keys,
-                            children,
-                            parent: _,
-                        } => {
-                            let index = match keys.binary_search(&key) {
+                        Node::Internal(node) => {
+                            let index = match node.keys.binary_search(&key) {
                                 Ok(index) => index + 1,
                                 Err(index) => index,
                             };
-                            cursor = children[index];
+                            cursor = node.children[index];
                         }
-                        Node::Leaf {
-                            keys,
-                            values,
-                            parent,
-                            next_leaf,
-                            prev_leaf: _,
-                        } => {
+                        Node::Leaf(node) => {
                             // Check if we already have a copy of this key and just need
                             // to swap in the updated value.
-                            match keys.binary_search(&key) {
+                            match node.keys.binary_search(&key) {
                                 Ok(index) => {
                                     // The key exists.
-                                    mem::swap(&mut values[index], &mut value);
+                                    mem::swap(&mut node.values[index], &mut value);
                                     return Some(value);
                                 }
                                 Err(index) => {
                                     // The key doesn't exist, so insert it.
-                                    keys.insert(index, key);
-                                    values.insert(index, value);
+                                    node.keys.insert(index, key);
+                                    node.values.insert(index, value);
 
-                                    if keys.len() > self.order {
+                                    if node.keys.len() > self.order {
                                         // The leaf node is full, so we split it in two.
-                                        let split_index = keys.len() / 2;
+                                        let split_index = node.keys.len() / 2;
                                         let sibling_keys =
-                                            keys.drain(split_index..).collect::<Vec<_>>();
+                                            node.keys.drain(split_index..).collect::<Vec<_>>();
                                         let sibling_values =
-                                            values.drain(split_index..).collect::<Vec<_>>();
+                                            node.values.drain(split_index..).collect::<Vec<_>>();
                                         let split_key = sibling_keys[0].clone();
 
                                         // Make the sibling now so we can link to it.
                                         let sibling = NonNull::new_unchecked(Box::into_raw(
-                                            Box::new(Node::<K, V>::Leaf {
+                                            Box::new(Node::Leaf(Leaf {
                                                 keys: sibling_keys,
                                                 values: sibling_values,
-                                                parent: *parent,
-                                                next_leaf: *next_leaf,
+                                                parent: node.parent,
+                                                next_leaf: node.next_leaf,
                                                 prev_leaf: Some(cursor),
-                                            }),
+                                            })),
                                         ));
 
                                         // Fix sibling links.
-                                        if let Some(next_leaf) = next_leaf {
-                                            if let Node::Leaf {
-                                                keys: _,
-                                                values: _,
-                                                parent: _,
-                                                next_leaf: _,
-                                                prev_leaf,
-                                            } = &mut (*next_leaf.as_ptr())
+                                        if let Some(next_leaf) = node.next_leaf {
+                                            if let Node::Leaf(next_leaf) =
+                                                &mut (*next_leaf.as_ptr())
                                             {
-                                                *prev_leaf = Some(sibling);
+                                                next_leaf.prev_leaf = Some(sibling);
                                             }
                                         }
-                                        *next_leaf = Some(sibling);
+                                        node.next_leaf = Some(sibling);
 
                                         if Some(cursor) == self.root {
                                             // We need a new root since we split it.
                                             let new_root = NonNull::new_unchecked(Box::into_raw(
-                                                Box::new(Node::<K, V>::Internal {
+                                                Box::new(Node::Internal(Internal {
                                                     keys: vec![split_key],
                                                     children: vec![cursor, sibling],
                                                     parent: None,
-                                                }),
+                                                })),
                                             ));
 
                                             // Connect the cursor to the new root.
-                                            if let Node::Leaf {
-                                                keys: _,
-                                                values: _,
-                                                parent,
-                                                next_leaf: _,
-                                                prev_leaf: _,
-                                            } = &mut (*cursor.as_ptr())
-                                            {
-                                                *parent = Some(new_root);
+                                            if let Node::Leaf(node) = &mut (*cursor.as_ptr()) {
+                                                node.parent = Some(new_root);
                                             }
 
                                             // Connect the sibling to the new root.
-                                            if let Node::Leaf {
-                                                keys: _,
-                                                values: _,
-                                                parent,
-                                                next_leaf: _,
-                                                prev_leaf: _,
-                                            } = &mut (*sibling.as_ptr())
-                                            {
-                                                *parent = Some(new_root);
+                                            if let Node::Leaf(sibling) = &mut (*sibling.as_ptr()) {
+                                                sibling.parent = Some(new_root);
                                             }
 
                                             // Use the new root.
@@ -196,7 +156,7 @@ impl<K, V> BPTreeMap<K, V> {
                                             // Insert to the parent.
                                             self.insert_internal(
                                                 split_key,
-                                                parent.unwrap(),
+                                                node.parent.unwrap(),
                                                 sibling,
                                             )
                                         }
@@ -214,14 +174,13 @@ impl<K, V> BPTreeMap<K, V> {
             // We don't have a root yet, so create a new one that contains the
             // key-value pair.
             unsafe {
-                let new_root =
-                    NonNull::new_unchecked(Box::into_raw(Box::new(Node::<K, V>::Leaf {
-                        keys: vec![key],
-                        values: vec![value],
-                        parent: None,
-                        next_leaf: None,
-                        prev_leaf: None,
-                    })));
+                let new_root = NonNull::new_unchecked(Box::into_raw(Box::new(Node::Leaf(Leaf {
+                    keys: vec![key],
+                    values: vec![value],
+                    parent: None,
+                    next_leaf: None,
+                    prev_leaf: None,
+                }))));
 
                 self.root = Some(new_root);
                 self.len += 1;
@@ -238,61 +197,42 @@ impl<K, V> BPTreeMap<K, V> {
         K: Ord + Clone,
     {
         unsafe {
-            if let Node::Internal {
-                keys,
-                children,
-                parent,
-            } = &mut (*cursor.as_ptr())
-            {
+            if let Node::Internal(node) = &mut (*cursor.as_ptr()) {
                 // Find where the key should go.
-                let index = match keys.binary_search(&key) {
+                let index = match node.keys.binary_search(&key) {
                     Ok(index) => index + 1,
                     Err(index) => index,
                 };
 
                 // Insert the key and child.
-                keys.insert(index, key);
-                children.insert(index + 1, child);
+                node.keys.insert(index, key);
+                node.children.insert(index + 1, child);
 
-                if keys.len() > self.order {
+                if node.keys.len() > self.order {
                     // The node is overfull now, so we need to split it into two.
-                    let split_index = keys.len() / 2;
-                    let sibling_keys = keys.drain(split_index + 1..).collect::<Vec<_>>();
-                    let sibling_children = children.drain(split_index + 1..).collect::<Vec<_>>();
-                    let split_key = keys.pop().unwrap();
+                    let split_index = node.keys.len() / 2;
+                    let sibling_keys = node.keys.drain(split_index + 1..).collect::<Vec<_>>();
+                    let sibling_children =
+                        node.children.drain(split_index + 1..).collect::<Vec<_>>();
+                    let split_key = node.keys.pop().unwrap();
 
                     // Make the sibling now so we can link to it.
                     let sibling =
-                        NonNull::new_unchecked(Box::into_raw(Box::new(Node::<K, V>::Internal {
+                        NonNull::new_unchecked(Box::into_raw(Box::new(Node::Internal(Internal {
                             keys: sibling_keys,
                             children: sibling_children,
-                            parent: *parent,
-                        })));
+                            parent: node.parent,
+                        }))));
 
                     // Fix up the parent for the sibling children.
-                    if let Node::Internal {
-                        keys: _,
-                        children: sibling_children,
-                        parent: _,
-                    } = &mut (*sibling.as_ptr())
-                    {
-                        for child in sibling_children {
+                    if let Node::Internal(sibling_node) = &mut (*sibling.as_ptr()) {
+                        for child in sibling_node.children.iter_mut() {
                             match &mut (*child.as_ptr()) {
-                                Node::Internal {
-                                    keys: _,
-                                    children: _,
-                                    parent: sibling_child_parent,
-                                } => {
-                                    *sibling_child_parent = Some(sibling);
+                                Node::Internal(child) => {
+                                    child.parent = Some(sibling);
                                 }
-                                Node::Leaf {
-                                    keys: _,
-                                    values: _,
-                                    parent: sibling_child_parent,
-                                    next_leaf: _,
-                                    prev_leaf: _,
-                                } => {
-                                    *sibling_child_parent = Some(sibling);
+                                Node::Leaf(child) => {
+                                    child.parent = Some(sibling);
                                 }
                             }
                         }
@@ -300,29 +240,23 @@ impl<K, V> BPTreeMap<K, V> {
 
                     if Some(cursor) == self.root {
                         // The root split, so create a new root.
-                        let new_root = NonNull::new_unchecked(Box::into_raw(Box::new(Node::<
-                            K,
-                            V,
-                        >::Internal {
-                            keys: vec![split_key],
-                            children: vec![cursor, sibling],
-                            parent: None,
-                        })));
+                        let new_root = NonNull::new_unchecked(Box::into_raw(Box::new(
+                            Node::Internal(Internal {
+                                keys: vec![split_key],
+                                children: vec![cursor, sibling],
+                                parent: None,
+                            }),
+                        )));
 
-                        if let Node::Internal {
-                            keys: _,
-                            children: _,
-                            parent,
-                        } = &mut (*sibling.as_ptr())
-                        {
-                            *parent = Some(new_root);
+                        if let Node::Internal(sibling) = &mut (*sibling.as_ptr()) {
+                            sibling.parent = Some(new_root);
                         }
 
-                        *parent = Some(new_root);
+                        node.parent = Some(new_root);
                         self.root = Some(new_root);
                     } else {
                         // Recursively insert the split key into the parent.
-                        self.insert_internal(split_key, parent.unwrap(), sibling);
+                        self.insert_internal(split_key, node.parent.unwrap(), sibling);
                     }
                 }
             }
@@ -340,73 +274,51 @@ impl<K, V> BPTreeMap<K, V> {
             unsafe {
                 loop {
                     match &mut (*cursor.as_ptr()) {
-                        Node::Internal {
-                            keys,
-                            children,
-                            parent: _,
-                        } => {
+                        Node::Internal(node) => {
                             cursor_index =
-                                match keys.binary_search_by(|probe| probe.borrow().cmp(key)) {
+                                match node.keys.binary_search_by(|probe| probe.borrow().cmp(key)) {
                                     Ok(index) => index + 1,
                                     Err(index) => index,
                                 };
-                            cursor = children[cursor_index];
+                            cursor = node.children[cursor_index];
                         }
-                        Node::Leaf {
-                            keys,
-                            values,
-                            parent,
-                            next_leaf,
-                            prev_leaf: _,
-                        } => {
-                            let index = keys
+                        Node::Leaf(node) => {
+                            let index = node
+                                .keys
                                 .binary_search_by(|probe| probe.borrow().cmp(key))
                                 .ok()?;
 
-                            let key = keys.remove(index);
-                            let value = values.remove(index);
+                            let key = node.keys.remove(index);
+                            let value = node.values.remove(index);
                             self.len -= 1;
 
                             // We might have an underfull non-root leaf node.
-                            if keys.len() < self.order.div_ceil(2) && Some(cursor) != self.root {
-                                if let Node::Internal {
-                                    keys: parent_keys,
-                                    children: parent_children,
-                                    parent: _,
-                                } = &mut (*parent.unwrap().as_ptr())
+                            if node.keys.len() < self.order.div_ceil(2) && Some(cursor) != self.root
+                            {
+                                if let Node::Internal(parent) =
+                                    &mut (*node.parent.unwrap().as_ptr())
                                 {
                                     // Check if the left sibling has any extra keys.
                                     if cursor_index > 0 {
-                                        if let Node::Leaf {
-                                            keys: left_sibling_keys,
-                                            values: left_sibling_values,
-                                            parent: _,
-                                            next_leaf: _,
-                                            prev_leaf: _,
-                                        } = &mut (*parent_children[cursor_index - 1].as_ptr())
+                                        if let Node::Leaf(left_sibling) =
+                                            &mut (*parent.children[cursor_index - 1].as_ptr())
                                         {
-                                            if left_sibling_keys.len() > self.order.div_ceil(2) {
+                                            if left_sibling.keys.len() > self.order.div_ceil(2) {
                                                 // We want the max key/value
                                                 // pair from the left sibling.
-                                                let max_key = left_sibling_keys.pop().unwrap();
-                                                let max_value = left_sibling_values.pop().unwrap();
+                                                let max_key = left_sibling.keys.pop().unwrap();
+                                                let max_value = left_sibling.values.pop().unwrap();
 
                                                 // The max key/value pair from
                                                 // the left sibling is smaller
                                                 // than any key/value in the
                                                 // cursor node.
-                                                keys.insert(0, max_key);
-                                                values.insert(0, max_value);
+                                                node.keys.insert(0, max_key);
+                                                node.values.insert(0, max_value);
 
                                                 // Update parent key.
-                                                if let Node::Internal {
-                                                    keys: parent_keys,
-                                                    children: _,
-                                                    parent: _,
-                                                } = &mut (*parent.unwrap().as_ptr())
-                                                {
-                                                    parent_keys[cursor_index - 1] = keys[0].clone();
-                                                }
+                                                parent.keys[cursor_index - 1] =
+                                                    node.keys[0].clone();
 
                                                 break Some((key, value));
                                             }
@@ -414,38 +326,26 @@ impl<K, V> BPTreeMap<K, V> {
                                     }
 
                                     // Check if the right sibling has any extra keys.
-                                    if cursor_index + 1 < parent_children.len() {
-                                        if let Node::Leaf {
-                                            keys: right_sibling_keys,
-                                            values: right_sibling_values,
-                                            parent: _,
-                                            next_leaf: _,
-                                            prev_leaf: _,
-                                        } = &mut (*parent_children[cursor_index + 1].as_ptr())
+                                    if cursor_index + 1 < parent.children.len() {
+                                        if let Node::Leaf(right_sibling) =
+                                            &mut (*parent.children[cursor_index + 1].as_ptr())
                                         {
-                                            if right_sibling_keys.len() > self.order.div_ceil(2) {
+                                            if right_sibling.keys.len() > self.order.div_ceil(2) {
                                                 // We want the min key/value
                                                 // pair from the right sibling.
-                                                let min_key = right_sibling_keys.remove(0);
-                                                let min_value = right_sibling_values.remove(0);
+                                                let min_key = right_sibling.keys.remove(0);
+                                                let min_value = right_sibling.values.remove(0);
 
                                                 // The min key/value pair from
                                                 // the left sibling is larger
                                                 // than any key/value in the
                                                 // cursor node.
-                                                keys.push(min_key);
-                                                values.push(min_value);
+                                                node.keys.push(min_key);
+                                                node.values.push(min_value);
 
                                                 // Update parent key.
-                                                if let Node::Internal {
-                                                    keys: parent_keys,
-                                                    children: _,
-                                                    parent: _,
-                                                } = &mut (*parent.unwrap().as_ptr())
-                                                {
-                                                    parent_keys[cursor_index] =
-                                                        right_sibling_keys[0].clone();
-                                                }
+                                                parent.keys[cursor_index] =
+                                                    right_sibling.keys[0].clone();
 
                                                 break Some((key, value));
                                             }
@@ -454,93 +354,64 @@ impl<K, V> BPTreeMap<K, V> {
 
                                     // Check if we can merge into the left sibling.
                                     if cursor_index > 0 {
-                                        if let Node::Leaf {
-                                            keys: left_sibling_keys,
-                                            values: left_sibling_values,
-                                            parent: _,
-                                            next_leaf: left_sibling_next_leaf,
-                                            prev_leaf: _,
-                                        } = &mut (*parent_children[cursor_index - 1].as_ptr())
+                                        if let Node::Leaf(left_sibling) =
+                                            &mut (*parent.children[cursor_index - 1].as_ptr())
                                         {
                                             // Take/merge in the keys and values.
-                                            left_sibling_keys.append(keys);
-                                            left_sibling_values.append(values);
+                                            left_sibling.keys.append(&mut node.keys);
+                                            left_sibling.values.append(&mut node.values);
 
                                             // Relink the left sibling.
-                                            *left_sibling_next_leaf = next_leaf
-                                                .map(|node| {
-                                                    if let Node::Leaf {
-                                                        keys: _,
-                                                        values: _,
-                                                        parent: _,
-                                                        next_leaf: _,
-                                                        prev_leaf,
-                                                    } = &mut (*node.as_ptr())
+                                            left_sibling.next_leaf =
+                                                node.next_leaf.and_then(|node| {
+                                                    if let Node::Leaf(next_leaf) =
+                                                        &mut (*node.as_ptr())
                                                     {
-                                                        *prev_leaf =
-                                                            Some(parent_children[cursor_index - 1]);
+                                                        next_leaf.prev_leaf =
+                                                            Some(parent.children[cursor_index - 1]);
                                                         Some(node)
                                                     } else {
                                                         None
                                                     }
-                                                })
-                                                .flatten();
+                                                });
 
                                             // Remove the split key.
-                                            if let Node::Internal {
-                                                keys: parent_keys,
-                                                children: _,
-                                                parent: _,
-                                            } = &(*parent.unwrap().as_ptr())
-                                            {
-                                                self.remove_entry_internal(
-                                                    parent_keys[cursor_index - 1].borrow(),
-                                                    parent.unwrap(),
-                                                    cursor,
-                                                )
-                                            }
+                                            self.remove_entry_internal(
+                                                parent.keys[cursor_index - 1].borrow(),
+                                                node.parent.unwrap(),
+                                                cursor,
+                                            );
                                         }
                                     }
 
                                     // Check if we can merge the right sibling.
-                                    if cursor_index + 1 < parent_children.len() {
-                                        if let Node::Leaf {
-                                            keys: right_sibling_keys,
-                                            values: right_sibling_values,
-                                            parent: _,
-                                            next_leaf: right_sibling_next_leaf,
-                                            prev_leaf: _,
-                                        } = &mut (*parent_children[cursor_index + 1].as_ptr())
+                                    if cursor_index + 1 < parent.children.len() {
+                                        if let Node::Leaf(right_sibling) =
+                                            &mut (*parent.children[cursor_index + 1].as_ptr())
                                         {
                                             // Take/merge in the keys and values.
-                                            keys.append(right_sibling_keys);
-                                            values.append(right_sibling_values);
+                                            node.keys.append(&mut right_sibling.keys);
+                                            node.values.append(&mut right_sibling.values);
 
                                             // Relink the right sibling.
-                                            *next_leaf = right_sibling_next_leaf
-                                                .map(|node| {
-                                                    if let Node::Leaf {
-                                                        keys: _,
-                                                        values: _,
-                                                        parent: _,
-                                                        next_leaf: _,
-                                                        prev_leaf,
-                                                    } = &mut (*node.as_ptr())
+                                            node.next_leaf =
+                                                right_sibling.next_leaf.and_then(|node| {
+                                                    if let Node::Leaf(next_leaf) =
+                                                        &mut (*node.as_ptr())
                                                     {
-                                                        *prev_leaf = Some(cursor);
+                                                        next_leaf.prev_leaf = Some(cursor);
                                                         Some(node)
                                                     } else {
                                                         None
                                                     }
-                                                })
-                                                .flatten();
+                                                });
 
                                             // Remove the split key from the parent.
                                             // The clone is to satisfy miri's stacked borrow check.
                                             self.remove_entry_internal(
-                                                parent_keys[cursor_index].clone().borrow(),
-                                                parent.unwrap(),
-                                                parent_children[cursor_index + 1],
+                                                parent.keys[cursor_index].clone().borrow(),
+                                                node.parent.unwrap(),
+                                                parent.children[cursor_index + 1],
                                             );
                                         }
                                     }
@@ -562,19 +433,14 @@ impl<K, V> BPTreeMap<K, V> {
     {
         unsafe {
             if Some(cursor) == self.root {
-                if let Node::Internal {
-                    keys,
-                    children,
-                    parent: _,
-                } = &mut (*cursor.as_ptr())
-                {
+                if let Node::Internal(node) = &mut (*cursor.as_ptr()) {
                     // Check if we're deleting the final key from the root.
-                    if keys.len() == 1 {
+                    if node.keys.len() == 1 {
                         // Decide which child is the new root.
-                        if children[1] == child {
-                            self.root = Some(children[0]);
+                        if node.children[1] == child {
+                            self.root = Some(node.children[0]);
                         } else {
-                            self.root = Some(children[1]);
+                            self.root = Some(node.children[1]);
                         }
 
                         // Re-`Box` the root and child to drop them.
@@ -586,67 +452,45 @@ impl<K, V> BPTreeMap<K, V> {
                 }
             }
 
-            if let Node::Internal {
-                keys,
-                children,
-                parent,
-            } = &mut (*cursor.as_ptr())
-            {
-                let index = keys
+            if let Node::Internal(node) = &mut (*cursor.as_ptr()) {
+                let index = node
+                    .keys
                     .binary_search_by(|probe| probe.borrow().cmp(key))
                     .unwrap();
-                keys.remove(index);
+                node.keys.remove(index);
 
-                let child_index = children.binary_search(&child).unwrap();
-                let _ = Box::from_raw(children.remove(child_index).as_ptr());
+                let child_index = node.children.binary_search(&child).unwrap();
+                let _ = Box::from_raw(node.children.remove(child_index).as_ptr());
 
-                if keys.len() < self.order / 2 && Some(cursor) != self.root {
-                    if let Node::Internal {
-                        keys: parent_keys,
-                        children: parent_children,
-                        parent: _,
-                    } = &mut (*parent.unwrap().as_ptr())
-                    {
-                        let cursor_index = parent_children.binary_search(&cursor).unwrap();
+                if node.keys.len() < self.order / 2 && Some(cursor) != self.root {
+                    if let Node::Internal(parent) = &mut (*node.parent.unwrap().as_ptr()) {
+                        let cursor_index = parent.children.binary_search(&cursor).unwrap();
 
                         // Check if there's a left sibling with extra keys.
                         if cursor_index > 0 {
-                            if let Node::Internal {
-                                keys: left_sibling_keys,
-                                children: left_sibling_children,
-                                parent: _,
-                            } = &mut (*parent_children[cursor_index - 1].as_ptr())
+                            if let Node::Internal(left_sibling) =
+                                &mut (*parent.children[cursor_index - 1].as_ptr())
                             {
                                 // Does the left sibling have extra keys?
-                                if left_sibling_keys.len() > self.order / 2 {
+                                if left_sibling.keys.len() > self.order / 2 {
                                     // Take the max key and clone it to the parent.
-                                    let mut max_key = left_sibling_keys.pop().unwrap();
-                                    mem::swap(&mut parent_keys[cursor_index - 1], &mut max_key);
-                                    keys.insert(0, max_key);
+                                    let mut max_key = left_sibling.keys.pop().unwrap();
+                                    mem::swap(&mut parent.keys[cursor_index - 1], &mut max_key);
+                                    node.keys.insert(0, max_key);
 
                                     // Take the max child.
-                                    let max_child = left_sibling_children.pop().unwrap();
-                                    children.insert(0, max_child);
+                                    let max_child = left_sibling.children.pop().unwrap();
+                                    node.children.insert(0, max_child);
 
                                     // Fix max child's parent.
-                                    match &mut (*children[0].as_ptr()) {
-                                        Node::Internal {
-                                            keys: _,
-                                            children: _,
-                                            parent: max_child_parent,
-                                        } => {
-                                            *max_child_parent =
-                                                Some(parent_children[cursor_index - 1]);
+                                    match &mut (*node.children[0].as_ptr()) {
+                                        Node::Internal(max_child) => {
+                                            max_child.parent =
+                                                Some(parent.children[cursor_index - 1]);
                                         }
-                                        Node::Leaf {
-                                            keys: _,
-                                            values: _,
-                                            parent: max_child_parent,
-                                            next_leaf: _,
-                                            prev_leaf: _,
-                                        } => {
-                                            *max_child_parent =
-                                                Some(parent_children[cursor_index - 1]);
+                                        Node::Leaf(max_child) => {
+                                            max_child.parent =
+                                                Some(parent.children[cursor_index - 1]);
                                         }
                                     }
 
@@ -656,42 +500,29 @@ impl<K, V> BPTreeMap<K, V> {
                         }
 
                         // Check if there's a right sibling with extra keys.
-                        if cursor_index + 1 < parent_children.len() {
-                            if let Node::Internal {
-                                keys: right_sibling_keys,
-                                children: right_sibling_children,
-                                parent: _,
-                            } = &mut (*parent_children[cursor_index + 1].as_ptr())
+                        if cursor_index + 1 < parent.children.len() {
+                            if let Node::Internal(right_sibling) =
+                                &mut (*parent.children[cursor_index + 1].as_ptr())
                             {
-                                if right_sibling_keys.len() > self.order / 2 {
+                                if right_sibling.keys.len() > self.order / 2 {
                                     // Take the min key and clone it to the parent.
-                                    let mut min_key = right_sibling_keys.remove(0);
-                                    mem::swap(&mut parent_keys[cursor_index], &mut min_key);
-                                    keys.push(min_key);
+                                    let mut min_key = right_sibling.keys.remove(0);
+                                    mem::swap(&mut parent.keys[cursor_index], &mut min_key);
+                                    node.keys.push(min_key);
 
                                     // Take the min child.
-                                    let min_child = right_sibling_children.remove(0);
-                                    children.push(min_child);
+                                    let min_child = right_sibling.children.remove(0);
+                                    node.children.push(min_child);
 
                                     // Fix min child's parent.
-                                    match &mut (*children[children.len() - 1].as_ptr()) {
-                                        Node::Internal {
-                                            keys: _,
-                                            children: _,
-                                            parent: min_child_parent,
-                                        } => {
-                                            *min_child_parent =
-                                                Some(parent_children[cursor_index + 1]);
+                                    match &mut (*node.children[node.children.len() - 1].as_ptr()) {
+                                        Node::Internal(min_child) => {
+                                            min_child.parent =
+                                                Some(parent.children[cursor_index + 1]);
                                         }
-                                        Node::Leaf {
-                                            keys: _,
-                                            values: _,
-                                            parent: min_child_parent,
-                                            next_leaf: _,
-                                            prev_leaf: _,
-                                        } => {
-                                            *min_child_parent =
-                                                Some(parent_children[cursor_index + 1]);
+                                        Node::Leaf(min_child) => {
+                                            min_child.parent =
+                                                Some(parent.children[cursor_index + 1]);
                                         }
                                     }
 
@@ -702,46 +533,35 @@ impl<K, V> BPTreeMap<K, V> {
 
                         // Check if there's a left sibling to merge with.
                         if cursor_index > 0 {
-                            if let Node::Internal {
-                                keys: left_sibling_keys,
-                                children: left_sibling_children,
-                                parent: _,
-                            } = &mut (*parent_children[cursor_index - 1].as_ptr())
+                            if let Node::Internal(left_sibling) =
+                                &mut (*parent.children[cursor_index - 1].as_ptr())
                             {
                                 // Left sibling keys, split key, then cursor keys.
-                                left_sibling_keys.push(parent_keys[cursor_index - 1].clone());
-                                left_sibling_keys.append(keys);
+                                left_sibling
+                                    .keys
+                                    .push(parent.keys[cursor_index - 1].clone());
+                                left_sibling.keys.append(&mut node.keys);
 
                                 // Update the parent for the to-be-merged children.
-                                for child in children.iter_mut() {
+                                for child in node.children.iter_mut() {
                                     match &mut (*child.as_ptr()) {
-                                        Node::Internal {
-                                            keys: _,
-                                            children: _,
-                                            parent: child_parent,
-                                        } => {
-                                            *child_parent = Some(parent_children[cursor_index - 1]);
+                                        Node::Internal(child) => {
+                                            child.parent = Some(parent.children[cursor_index - 1]);
                                         }
-                                        Node::Leaf {
-                                            keys: _,
-                                            values: _,
-                                            parent: child_parent,
-                                            next_leaf: _,
-                                            prev_leaf: _,
-                                        } => {
-                                            *child_parent = Some(parent_children[cursor_index - 1]);
+                                        Node::Leaf(child) => {
+                                            child.parent = Some(parent.children[cursor_index - 1]);
                                         }
                                     }
                                 }
 
                                 // Merge the children into the left sibling.
-                                left_sibling_children.append(children);
+                                left_sibling.children.append(&mut node.children);
 
                                 // Remove the split key from the parent.
                                 // The clone is to satisfy miri's stacked borrow check.
                                 self.remove_entry_internal(
-                                    parent_keys[cursor_index - 1].clone().borrow(),
-                                    parent.unwrap(),
+                                    parent.keys[cursor_index - 1].clone().borrow(),
+                                    node.parent.unwrap(),
                                     cursor,
                                 );
 
@@ -750,48 +570,35 @@ impl<K, V> BPTreeMap<K, V> {
                         }
 
                         // Check if there's a right sibling to merge with.
-                        if cursor_index + 1 < parent_children.len() {
-                            if let Node::Internal {
-                                keys: right_sibling_keys,
-                                children: right_sibling_children,
-                                parent: _,
-                            } = &mut (*parent_children[cursor_index + 1].as_ptr())
+                        if cursor_index + 1 < parent.children.len() {
+                            if let Node::Internal(right_sibling) =
+                                &mut (*parent.children[cursor_index + 1].as_ptr())
                             {
                                 // Cursor keys, split key, then right sibling keys.
-                                keys.push(parent_keys[cursor_index].clone());
-                                keys.append(right_sibling_keys);
+                                node.keys.push(parent.keys[cursor_index].clone());
+                                node.keys.append(&mut right_sibling.keys);
 
                                 // Update the parent for the to-be-merged children.
-                                for child in right_sibling_children.iter_mut() {
+                                for child in right_sibling.children.iter_mut() {
                                     match &mut (*child.as_ptr()) {
-                                        Node::Internal {
-                                            keys: _,
-                                            children: _,
-                                            parent: child_parent,
-                                        } => {
-                                            *child_parent = Some(cursor);
+                                        Node::Internal(child) => {
+                                            child.parent = Some(cursor);
                                         }
-                                        Node::Leaf {
-                                            keys: _,
-                                            values: _,
-                                            parent: child_parent,
-                                            next_leaf: _,
-                                            prev_leaf: _,
-                                        } => {
-                                            *child_parent = Some(cursor);
+                                        Node::Leaf(child) => {
+                                            child.parent = Some(cursor);
                                         }
                                     }
                                 }
 
                                 // Merge in the right sibling's children.
-                                children.append(right_sibling_children);
+                                node.children.append(&mut right_sibling.children);
 
                                 // Remove the split key from the parent.
                                 // The clone is to satisfy miri's stacked borrow check.
                                 self.remove_entry_internal(
-                                    parent_keys[cursor_index].clone().borrow(),
-                                    parent.unwrap(),
-                                    parent_children[cursor_index + 1],
+                                    parent.keys[cursor_index].clone().borrow(),
+                                    node.parent.unwrap(),
+                                    parent.children[cursor_index + 1],
                                 );
                             }
                         }
@@ -815,18 +622,8 @@ impl<K, V> BPTreeMap<K, V> {
             unsafe {
                 loop {
                     match &(*cursor.as_ptr()) {
-                        Node::Internal {
-                            keys: _,
-                            children,
-                            parent: _,
-                        } => cursor = children[0],
-                        Node::Leaf {
-                            keys: _,
-                            values: _,
-                            parent: _,
-                            next_leaf: _,
-                            prev_leaf: _,
-                        } => {
+                        Node::Internal(node) => cursor = node.children[0],
+                        Node::Leaf(_) => {
                             break Iter {
                                 cursor: Some(cursor),
                                 index: 0,
@@ -853,18 +650,8 @@ impl<K, V> BPTreeMap<K, V> {
             unsafe {
                 loop {
                     match &(*cursor.as_ptr()) {
-                        Node::Internal {
-                            keys: _,
-                            children,
-                            parent: _,
-                        } => cursor = children[0],
-                        Node::Leaf {
-                            keys: _,
-                            values: _,
-                            parent: _,
-                            next_leaf: _,
-                            prev_leaf: _,
-                        } => {
+                        Node::Internal(node) => cursor = node.children[0],
+                        Node::Leaf(_) => {
                             break IterMut {
                                 cursor: Some(cursor),
                                 index: 0,
@@ -904,22 +691,12 @@ impl<K, V> Drop for BPTreeMap<K, V> {
             unsafe {
                 let boxed_node = Box::from_raw(node.as_ptr());
                 match *boxed_node {
-                    Node::Internal {
-                        keys: _,
-                        ref children,
-                        parent: _,
-                    } => {
-                        for child in children {
-                            recursive_drop(*child)
+                    Node::Internal(node) => {
+                        for child in node.children {
+                            recursive_drop(child)
                         }
                     }
-                    Node::Leaf {
-                        keys: _,
-                        values: _,
-                        parent: _,
-                        next_leaf: _,
-                        prev_leaf: _,
-                    } => {}
+                    Node::Leaf(_) => {}
                 }
             }
         }

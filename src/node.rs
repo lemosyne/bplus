@@ -5,18 +5,22 @@ use std::{
 
 pub(crate) type Link<K, V> = NonNull<Node<K, V>>;
 pub(crate) enum Node<K, V> {
-    Internal {
-        keys: Vec<K>,
-        children: Vec<Link<K, V>>,
-        parent: Option<Link<K, V>>,
-    },
-    Leaf {
-        keys: Vec<K>,
-        values: Vec<V>,
-        parent: Option<Link<K, V>>,
-        next_leaf: Option<Link<K, V>>,
-        prev_leaf: Option<Link<K, V>>,
-    },
+    Internal(Internal<K, V>),
+    Leaf(Leaf<K, V>),
+}
+
+pub(crate) struct Internal<K, V> {
+    pub(crate) keys: Vec<K>,
+    pub(crate) children: Vec<Link<K, V>>,
+    pub(crate) parent: Option<Link<K, V>>,
+}
+
+pub(crate) struct Leaf<K, V> {
+    pub(crate) keys: Vec<K>,
+    pub(crate) values: Vec<V>,
+    pub(crate) parent: Option<Link<K, V>>,
+    pub(crate) next_leaf: Option<Link<K, V>>,
+    pub(crate) prev_leaf: Option<Link<K, V>>,
 }
 
 impl<K, V> Debug for Node<K, V>
@@ -34,37 +38,27 @@ where
             write!(f, "{}", "    ".repeat(depth))?;
 
             match node {
-                Node::Internal {
-                    keys,
-                    children,
-                    parent: _,
-                } => {
-                    writeln!(f, "{:?}", keys)?;
+                Node::Internal(node) => {
+                    writeln!(f, "{:?}", node.keys)?;
 
                     unsafe {
-                        for (i, child) in children.iter().enumerate() {
+                        for (i, child) in node.children.iter().enumerate() {
                             recursive_fmt(
                                 &(*child.as_ptr()),
                                 f,
                                 depth + 1,
-                                i + 1 == children.len() && last,
+                                i + 1 == node.children.len() && last,
                             )?;
                         }
                     }
 
                     Ok(())
                 }
-                Node::Leaf {
-                    keys,
-                    values: _,
-                    parent: _,
-                    next_leaf: _,
-                    prev_leaf: _,
-                } => {
+                Node::Leaf(node) => {
                     if last {
-                        write!(f, "{:?}", keys)
+                        write!(f, "{:?}", node.keys)
                     } else {
-                        writeln!(f, "{:?}", keys)
+                        writeln!(f, "{:?}", node.keys)
                     }
                 }
             }
