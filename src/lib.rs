@@ -432,7 +432,7 @@ impl<K, V> BPTreeMap<K, V> {
 
                             // Remove the split key.
                             self.remove_entry_internal(
-                                parent.keys[cursor_index - 1].borrow(),
+                                parent.keys[cursor_index - 1].clone().borrow(),
                                 node.parent.unwrap(),
                                 cursor,
                             );
