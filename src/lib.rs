@@ -40,7 +40,7 @@ impl<K, V> BPTreeMap<K, V> {
         self.len == 0
     }
 
-    pub fn get<Q>(&self, key: &Q) -> Option<&V>
+    pub fn get_key_value<Q>(&self, key: &Q) -> Option<(&K, &V)>
     where
         K: Borrow<Q>,
         Q: Ord,
@@ -59,12 +59,98 @@ impl<K, V> BPTreeMap<K, V> {
             if let Node::Leaf(node) = &(*cursor.as_ptr()) {
                 node.keys
                     .binary_search_by(|probe| probe.borrow().cmp(key))
-                    .map(|index| &node.values[index])
+                    .map(|index| (&node.keys[index], &node.values[index]))
                     .ok()
             } else {
                 None
             }
         }
+    }
+
+    pub fn get<Q>(&self, key: &Q) -> Option<&V>
+    where
+        K: Borrow<Q>,
+        Q: Ord,
+    {
+        self.get_key_value(key).map(|(_, value)| value)
+    }
+
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
+    where
+        K: Borrow<Q>,
+        Q: Ord,
+    {
+        unsafe {
+            let mut cursor = self.root?;
+
+            while let Node::Internal(node) = &(*cursor.as_ptr()) {
+                let index = match node.keys.binary_search_by(|probe| probe.borrow().cmp(key)) {
+                    Ok(index) => index + 1,
+                    Err(index) => index,
+                };
+                cursor = node.children[index];
+            }
+
+            if let Node::Leaf(node) = &mut (*cursor.as_ptr()) {
+                node.keys
+                    .binary_search_by(|probe| probe.borrow().cmp(key))
+                    .map(|index| &mut node.values[index])
+                    .ok()
+            } else {
+                None
+            }
+        }
+    }
+
+    pub fn first_key_value(&self) -> Option<(&K, &V)> {
+        unsafe {
+            let mut cursor = self.root?;
+
+            while let Node::Internal(node) = &(*cursor.as_ptr()) {
+                cursor = node.children[0];
+            }
+
+            if let Node::Leaf(node) = &(*cursor.as_ptr()) {
+                Some((&node.keys[0], &node.values[0]))
+            } else {
+                None
+            }
+        }
+    }
+
+    pub fn last_key_value(&self) -> Option<(&K, &V)> {
+        unsafe {
+            let mut cursor = self.root?;
+
+            while let Node::Internal(node) = &(*cursor.as_ptr()) {
+                cursor = node.children[node.children.len() - 1];
+            }
+
+            if let Node::Leaf(node) = &(*cursor.as_ptr()) {
+                Some((
+                    &node.keys[node.keys.len() - 1],
+                    &node.values[node.values.len() - 1],
+                ))
+            } else {
+                None
+            }
+        }
+    }
+
+    pub fn pop_first(&mut self) -> Option<(K, V)>
+    where
+        K: Ord + Clone,
+    {
+        let (key, _) = self.first_key_value()?;
+        self.remove_entry(&key.clone())
+    }
+
+    pub fn pop_last(&mut self) -> Option<(K, V)>
+    where
+        K: Ord + Clone,
+    {
+        let (key, _) = self.last_key_value()?;
+        self.remove_entry(&key.clone())
     }
 
     pub fn insert(&mut self, key: K, mut value: V) -> Option<V>
