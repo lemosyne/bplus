@@ -139,7 +139,7 @@ impl<K, V> BPTreeMap<K, V> {
 
     pub fn pop_first(&mut self) -> Option<(K, V)>
     where
-        K: Ord + Clone + Debug,
+        K: Ord + Clone,
     {
         let (key, _) = self.first_key_value()?;
         self.remove_entry(&key.clone())
@@ -147,7 +147,7 @@ impl<K, V> BPTreeMap<K, V> {
 
     pub fn pop_last(&mut self) -> Option<(K, V)>
     where
-        K: Ord + Clone + Debug,
+        K: Ord + Clone,
     {
         let (key, _) = self.last_key_value()?;
         self.remove_entry(&key.clone())
@@ -330,7 +330,7 @@ impl<K, V> BPTreeMap<K, V> {
 
     pub fn remove_entry<Q>(&mut self, key: &Q) -> Option<(K, V)>
     where
-        K: Borrow<Q> + Clone + Debug,
+        K: Borrow<Q> + Clone,
         Q: Ord,
     {
         unsafe {
@@ -473,7 +473,7 @@ impl<K, V> BPTreeMap<K, V> {
 
     fn remove_entry_internal<Q>(&mut self, key: &Q, cursor: Link<K, V>, child: Link<K, V>)
     where
-        K: Borrow<Q> + Clone + Debug,
+        K: Borrow<Q> + Clone,
         Q: Ord,
     {
         unsafe {
@@ -661,7 +661,7 @@ impl<K, V> BPTreeMap<K, V> {
 
     pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
     where
-        K: Borrow<Q> + Clone + Debug,
+        K: Borrow<Q> + Clone,
         Q: Ord,
     {
         self.remove_entry(key).map(|(_, value)| value)
