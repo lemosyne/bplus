@@ -139,7 +139,7 @@ impl<K, V> BPTreeMap<K, V> {
 
     pub fn pop_first(&mut self) -> Option<(K, V)>
     where
-        K: Ord + Clone,
+        K: Ord + Clone + Debug,
     {
         let (key, _) = self.first_key_value()?;
         self.remove_entry(&key.clone())
@@ -147,7 +147,7 @@ impl<K, V> BPTreeMap<K, V> {
 
     pub fn pop_last(&mut self) -> Option<(K, V)>
     where
-        K: Ord + Clone,
+        K: Ord + Clone + Debug,
     {
         let (key, _) = self.last_key_value()?;
         self.remove_entry(&key.clone())
@@ -164,7 +164,6 @@ impl<K, V> BPTreeMap<K, V> {
                     values: vec![value],
                     parent: None,
                     next_leaf: None,
-                    prev_leaf: None,
                 }))));
 
                 self.root = Some(new_root);
@@ -216,15 +215,9 @@ impl<K, V> BPTreeMap<K, V> {
                                 values: sibling_values,
                                 parent: node.parent,
                                 next_leaf: node.next_leaf,
-                                prev_leaf: Some(cursor),
                             }))));
 
-                        // Fix sibling links.
-                        if let Some(next_leaf) = node.next_leaf {
-                            if let Node::Leaf(next_leaf) = &mut (*next_leaf.as_ptr()) {
-                                next_leaf.prev_leaf = Some(sibling);
-                            }
-                        }
+                        // Connect to the sibling.
                         node.next_leaf = Some(sibling);
 
                         if Some(cursor) == self.root {
@@ -337,7 +330,7 @@ impl<K, V> BPTreeMap<K, V> {
 
     pub fn remove_entry<Q>(&mut self, key: &Q) -> Option<(K, V)>
     where
-        K: Borrow<Q> + Clone,
+        K: Borrow<Q> + Clone + Debug,
         Q: Ord,
     {
         unsafe {
@@ -435,14 +428,7 @@ impl<K, V> BPTreeMap<K, V> {
                             left_sibling.values.append(&mut node.values);
 
                             // Relink the left sibling.
-                            left_sibling.next_leaf = node.next_leaf.and_then(|node| {
-                                if let Node::Leaf(next_leaf) = &mut (*node.as_ptr()) {
-                                    next_leaf.prev_leaf = Some(parent.children[cursor_index - 1]);
-                                    Some(node)
-                                } else {
-                                    None
-                                }
-                            });
+                            left_sibling.next_leaf = node.next_leaf;
 
                             // Remove the split key.
                             self.remove_entry_internal(
@@ -465,14 +451,7 @@ impl<K, V> BPTreeMap<K, V> {
                             node.values.append(&mut right_sibling.values);
 
                             // Relink the right sibling.
-                            node.next_leaf = right_sibling.next_leaf.and_then(|node| {
-                                if let Node::Leaf(next_leaf) = &mut (*node.as_ptr()) {
-                                    next_leaf.prev_leaf = Some(cursor);
-                                    Some(node)
-                                } else {
-                                    None
-                                }
-                            });
+                            node.next_leaf = right_sibling.next_leaf;
 
                             // Remove the split key from the parent.
                             // The clone is to satisfy miri's stacked borrow check.
@@ -494,7 +473,7 @@ impl<K, V> BPTreeMap<K, V> {
 
     fn remove_entry_internal<Q>(&mut self, key: &Q, cursor: Link<K, V>, child: Link<K, V>)
     where
-        K: Borrow<Q> + Clone,
+        K: Borrow<Q> + Clone + Debug,
         Q: Ord,
     {
         unsafe {
@@ -525,7 +504,11 @@ impl<K, V> BPTreeMap<K, V> {
                     .unwrap();
                 node.keys.remove(index);
 
-                let child_index = node.children.binary_search(&child).unwrap();
+                let child_index = node
+                    .children
+                    .iter()
+                    .position(|probe| *probe == child)
+                    .unwrap();
                 let _ = Box::from_raw(node.children.remove(child_index).as_ptr());
 
                 if !node.is_underfull(self.order) || Some(cursor) == self.root {
@@ -533,7 +516,11 @@ impl<K, V> BPTreeMap<K, V> {
                 }
 
                 if let Node::Internal(parent) = &mut (*node.parent.unwrap().as_ptr()) {
-                    let cursor_index = parent.children.binary_search(&cursor).unwrap();
+                    let cursor_index = parent
+                        .children
+                        .iter()
+                        .position(|probe| *probe == cursor)
+                        .unwrap();
 
                     // Check if there's a left sibling with extra keys.
                     if cursor_index > 0 {
@@ -554,10 +541,10 @@ impl<K, V> BPTreeMap<K, V> {
                                 // Fix max child's parent.
                                 match &mut (*node.children[0].as_ptr()) {
                                     Node::Internal(max_child) => {
-                                        max_child.parent = Some(parent.children[cursor_index - 1]);
+                                        max_child.parent = Some(cursor);
                                     }
                                     Node::Leaf(max_child) => {
-                                        max_child.parent = Some(parent.children[cursor_index - 1]);
+                                        max_child.parent = Some(cursor);
                                     }
                                 }
 
@@ -584,10 +571,10 @@ impl<K, V> BPTreeMap<K, V> {
                                 // Fix min child's parent.
                                 match &mut (*node.children[node.children.len() - 1].as_ptr()) {
                                     Node::Internal(min_child) => {
-                                        min_child.parent = Some(parent.children[cursor_index + 1]);
+                                        min_child.parent = Some(cursor);
                                     }
                                     Node::Leaf(min_child) => {
-                                        min_child.parent = Some(parent.children[cursor_index + 1]);
+                                        min_child.parent = Some(cursor);
                                     }
                                 }
 
@@ -674,7 +661,7 @@ impl<K, V> BPTreeMap<K, V> {
 
     pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
     where
-        K: Borrow<Q> + Clone,
+        K: Borrow<Q> + Clone + Debug,
         Q: Ord,
     {
         self.remove_entry(key).map(|(_, value)| value)
@@ -813,6 +800,12 @@ mod tests {
 
         for n in tree.iter() {
             println!("{n:?}");
+        }
+
+        for n in [25, 4, 16, 9, 20, 10, 11, 12] {
+            println!("Delete {n}:");
+            tree.remove_entry(&n);
+            println!("{:?}", tree);
         }
     }
 }

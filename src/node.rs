@@ -34,7 +34,6 @@ pub(crate) struct Leaf<K, V> {
     pub(crate) values: Vec<V>,
     pub(crate) parent: Option<Link<K, V>>,
     pub(crate) next_leaf: Option<Link<K, V>>,
-    pub(crate) prev_leaf: Option<Link<K, V>>,
 }
 
 impl<K, V> Leaf<K, V> {
