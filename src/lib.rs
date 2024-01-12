@@ -110,63 +110,63 @@ impl<K, V> BPTreeMap<K, V> {
                         // The key doesn't exist, so insert it.
                         node.keys.insert(index, key);
                         node.values.insert(index, value);
+                        self.len += 1;
 
-                        if node.is_overfull(self.order) {
-                            // The leaf node is full, so we split it in two.
-                            let split_index = node.keys.len() / 2;
-                            let sibling_keys = node.keys.drain(split_index..).collect::<Vec<_>>();
-                            let sibling_values =
-                                node.values.drain(split_index..).collect::<Vec<_>>();
-                            let split_key = sibling_keys[0].clone();
-
-                            // Make the sibling now so we can link to it.
-                            let sibling =
-                                NonNull::new_unchecked(Box::into_raw(Box::new(Node::Leaf(Leaf {
-                                    keys: sibling_keys,
-                                    values: sibling_values,
-                                    parent: node.parent,
-                                    next_leaf: node.next_leaf,
-                                    prev_leaf: Some(cursor),
-                                }))));
-
-                            // Fix sibling links.
-                            if let Some(next_leaf) = node.next_leaf {
-                                if let Node::Leaf(next_leaf) = &mut (*next_leaf.as_ptr()) {
-                                    next_leaf.prev_leaf = Some(sibling);
-                                }
-                            }
-                            node.next_leaf = Some(sibling);
-
-                            if Some(cursor) == self.root {
-                                // We need a new root since we split it.
-                                let new_root = NonNull::new_unchecked(Box::into_raw(Box::new(
-                                    Node::Internal(Internal {
-                                        keys: vec![split_key],
-                                        children: vec![cursor, sibling],
-                                        parent: None,
-                                    }),
-                                )));
-
-                                // Connect the cursor to the new root.
-                                if let Node::Leaf(node) = &mut (*cursor.as_ptr()) {
-                                    node.parent = Some(new_root);
-                                }
-
-                                // Connect the sibling to the new root.
-                                if let Node::Leaf(sibling) = &mut (*sibling.as_ptr()) {
-                                    sibling.parent = Some(new_root);
-                                }
-
-                                // Use the new root.
-                                self.root = Some(new_root);
-                            } else {
-                                // Insert to the parent.
-                                self.insert_internal(split_key, node.parent.unwrap(), sibling)
-                            }
+                        // We're done if the node isn't overfull.
+                        if !node.is_overfull(self.order) {
+                            return None;
                         }
 
-                        self.len += 1;
-                        return None;
+                        // The leaf node is overfull, so we split it in two.
+                        let split_index = node.keys.len() / 2;
+                        let sibling_keys = node.keys.drain(split_index..).collect::<Vec<_>>();
+                        let sibling_values = node.values.drain(split_index..).collect::<Vec<_>>();
+                        let split_key = sibling_keys[0].clone();
+
+                        // Make the sibling now so we can link to it.
+                        let sibling =
+                            NonNull::new_unchecked(Box::into_raw(Box::new(Node::Leaf(Leaf {
+                                keys: sibling_keys,
+                                values: sibling_values,
+                                parent: node.parent,
+                                next_leaf: node.next_leaf,
+                                prev_leaf: Some(cursor),
+                            }))));
+
+                        // Fix sibling links.
+                        if let Some(next_leaf) = node.next_leaf {
+                            if let Node::Leaf(next_leaf) = &mut (*next_leaf.as_ptr()) {
+                                next_leaf.prev_leaf = Some(sibling);
+                            }
+                        }
+                        node.next_leaf = Some(sibling);
+
+                        if Some(cursor) == self.root {
+                            // We need a new root since we split it.
+                            let new_root = NonNull::new_unchecked(Box::into_raw(Box::new(
+                                Node::Internal(Internal {
+                                    keys: vec![split_key],
+                                    children: vec![cursor, sibling],
+                                    parent: None,
+                                }),
+                            )));
+
+                            // Connect the cursor to the new root.
+                            if let Node::Leaf(node) = &mut (*cursor.as_ptr()) {
+                                node.parent = Some(new_root);
+                            }
+
+                            // Connect the sibling to the new root.
+                            if let Node::Leaf(sibling) = &mut (*sibling.as_ptr()) {
+                                sibling.parent = Some(new_root);
+                            }
+
+                            // Use the new root.
+                            self.root = Some(new_root);
+                        } else {
+                            // Insert to the parent.
+                            self.insert_internal(split_key, node.parent.unwrap(), sibling)
+                        }
                     }
                 }
             }
@@ -276,11 +276,18 @@ impl<K, V> BPTreeMap<K, V> {
                 let value = node.values.remove(index);
                 self.len -= 1;
 
+                // Check if the node is now underfull or if its the root. The
+                // root is exceptional in that it is allowed to be underfull.
                 if !node.is_underfull(self.order) || Some(cursor) == self.root {
+                    // Clean out the root if we've emptied it.
+                    if Some(cursor) == self.root && node.keys.is_empty() {
+                        let _ = Box::from_raw(cursor.as_ptr());
+                        self.root = None;
+                    }
                     return Some((key, value));
                 }
 
-                // We might have an underfull non-root leaf node.
+                // We have an underfull non-root leaf node.
                 if let Node::Internal(parent) = &mut (*node.parent.unwrap().as_ptr()) {
                     // Check if the left sibling has any extra keys.
                     if cursor_index > 0 {
