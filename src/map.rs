@@ -166,12 +166,13 @@ impl<K, V> BPTreeMap<K, V> {
     {
         unsafe {
             if self.root.is_none() {
-                let new_root = NonNull::new_unchecked(Box::into_raw(Box::new(Node::Leaf(Leaf {
+                let new_root = Node::Leaf(Leaf {
                     keys: vec![key],
                     values: vec![value],
                     parent: None,
                     next_leaf: None,
-                }))));
+                })
+                .to_link();
 
                 self.root = Some(new_root);
                 self.len += 1;
@@ -204,54 +205,9 @@ impl<K, V> BPTreeMap<K, V> {
                         node.values.insert(index, value);
                         self.len += 1;
 
-                        // We're done if the node isn't overfull.
-                        if !node.is_overfull(self.order) {
-                            return None;
-                        }
-
-                        // The leaf node is overfull, so we split it in two.
-                        let split_index = node.keys.len() / 2;
-                        let sibling_keys = node.keys.drain(split_index..).collect::<Vec<_>>();
-                        let sibling_values = node.values.drain(split_index..).collect::<Vec<_>>();
-                        let split_key = sibling_keys[0].clone();
-
-                        // Make the sibling now so we can link to it.
-                        let sibling =
-                            NonNull::new_unchecked(Box::into_raw(Box::new(Node::Leaf(Leaf {
-                                keys: sibling_keys,
-                                values: sibling_values,
-                                parent: node.parent,
-                                next_leaf: node.next_leaf,
-                            }))));
-
-                        // Connect to the sibling.
-                        node.next_leaf = Some(sibling);
-
-                        if Some(cursor) == self.root {
-                            // We need a new root since we split it.
-                            let new_root = NonNull::new_unchecked(Box::into_raw(Box::new(
-                                Node::Internal(Internal {
-                                    keys: vec![split_key],
-                                    children: vec![cursor, sibling],
-                                    parent: None,
-                                }),
-                            )));
-
-                            // Connect the cursor to the new root.
-                            if let Node::Leaf(node) = &mut (*cursor.as_ptr()) {
-                                node.parent = Some(new_root);
-                            }
-
-                            // Connect the sibling to the new root.
-                            if let Node::Leaf(sibling) = &mut (*sibling.as_ptr()) {
-                                sibling.parent = Some(new_root);
-                            }
-
-                            // Use the new root.
-                            self.root = Some(new_root);
-                        } else {
-                            // Insert to the parent.
-                            self.insert_internal(split_key, node.parent.unwrap(), sibling)
+                        // Split the node if it's overfull.
+                        if node.is_overfull(self.order) {
+                            self.split_leaf(node, cursor);
                         }
                     }
                 }
@@ -261,76 +217,125 @@ impl<K, V> BPTreeMap<K, V> {
         None
     }
 
-    // This is called when `insert()` results in a split node, or if
-    // `insert_internal()` results in a split node.
-    fn insert_internal(&mut self, key: K, cursor: Link<K, V>, child: Link<K, V>)
+    unsafe fn split_leaf(&mut self, node: &mut Leaf<K, V>, cursor: Link<K, V>)
     where
         K: Ord + Clone,
     {
-        unsafe {
-            if let Node::Internal(node) = &mut (*cursor.as_ptr()) {
-                // Find where the key should go.
-                let index = match node.keys.binary_search(&key) {
-                    Ok(index) => index + 1,
-                    Err(index) => index,
-                };
+        // Split out the sibling keys and values.
+        let split_index = node.keys.len() / 2;
+        let sibling_keys = node.keys.drain(split_index..).collect::<Vec<_>>();
+        let sibling_values = node.values.drain(split_index..).collect::<Vec<_>>();
+        let split_key = sibling_keys[0].clone();
 
-                // Insert the key and child.
-                node.keys.insert(index, key);
-                node.children.insert(index + 1, child);
+        // Make the sibling so we can link to it.
+        let sibling = Node::Leaf(Leaf {
+            keys: sibling_keys,
+            values: sibling_values,
+            parent: node.parent,
+            next_leaf: node.next_leaf,
+        })
+        .to_link();
 
-                // We're done if the node isn't overfull.
-                if !node.is_overfull(self.order) {
-                    return;
-                }
+        // Connect to the sibling.
+        node.next_leaf = Some(sibling);
 
-                // Split the overfull node in two.
-                let split_index = node.keys.len() / 2;
-                let sibling_keys = node.keys.drain(split_index + 1..).collect::<Vec<_>>();
-                let sibling_children = node.children.drain(split_index + 1..).collect::<Vec<_>>();
-                let split_key = node.keys.pop().unwrap();
+        // Check if we're splitting the root.
+        if Some(cursor) == self.root {
+            // We split the root, so we need a new root.
+            let new_root = Node::Internal(Internal {
+                keys: vec![split_key],
+                children: vec![cursor, sibling],
+                parent: None,
+            })
+            .to_link();
 
-                // Make the sibling now so we can link to it.
-                let sibling =
-                    NonNull::new_unchecked(Box::into_raw(Box::new(Node::Internal(Internal {
-                        keys: sibling_keys,
-                        children: sibling_children,
-                        parent: node.parent,
-                    }))));
+            // Connect the sibling to the new root.
+            if let Node::Leaf(sibling) = &mut (*sibling.as_ptr()) {
+                sibling.parent = Some(new_root);
+            }
 
-                // Fix up the parent for the sibling children.
-                if let Node::Internal(sibling_node) = &mut (*sibling.as_ptr()) {
-                    for child in sibling_node.children.iter_mut() {
-                        match &mut (*child.as_ptr()) {
-                            Node::Internal(child) => {
-                                child.parent = Some(sibling);
-                            }
-                            Node::Leaf(child) => {
-                                child.parent = Some(sibling);
-                            }
-                        }
+            // Use the new root.
+            node.parent = Some(new_root);
+            self.root = Some(new_root);
+        } else {
+            // Insert the split key into the parent.
+            self.insert_internal(split_key, node.parent.unwrap(), sibling)
+        }
+    }
+
+    unsafe fn split_internal(&mut self, node: &mut Internal<K, V>, cursor: Link<K, V>)
+    where
+        K: Ord + Clone,
+    {
+        // Split out the sibling keys and values.
+        let split_index = node.keys.len() / 2;
+        let sibling_keys = node.keys.drain(split_index + 1..).collect::<Vec<_>>();
+        let sibling_children = node.children.drain(split_index + 1..).collect::<Vec<_>>();
+        let split_key = node.keys.pop().unwrap();
+
+        // Make the sibling now so we can link to it.
+        let sibling = NonNull::new_unchecked(Box::into_raw(Box::new(Node::Internal(Internal {
+            keys: sibling_keys,
+            children: sibling_children,
+            parent: node.parent,
+        }))));
+
+        // Fix up the parent for the sibling children.
+        if let Node::Internal(sibling_node) = &mut (*sibling.as_ptr()) {
+            for child in sibling_node.children.iter_mut() {
+                match &mut (*child.as_ptr()) {
+                    Node::Internal(child) => {
+                        child.parent = Some(sibling);
+                    }
+                    Node::Leaf(child) => {
+                        child.parent = Some(sibling);
                     }
                 }
+            }
+        }
 
-                if Some(cursor) == self.root {
-                    // The root split, so create a new root.
-                    let new_root =
-                        NonNull::new_unchecked(Box::into_raw(Box::new(Node::Internal(Internal {
-                            keys: vec![split_key],
-                            children: vec![cursor, sibling],
-                            parent: None,
-                        }))));
+        // Check if we split the root.
+        if Some(cursor) == self.root {
+            // The root split, so create a new root.
+            let new_root = Node::Internal(Internal {
+                keys: vec![split_key],
+                children: vec![cursor, sibling],
+                parent: None,
+            })
+            .to_link();
 
-                    if let Node::Internal(sibling) = &mut (*sibling.as_ptr()) {
-                        sibling.parent = Some(new_root);
-                    }
+            // Connect to the sibling to the new root.
+            if let Node::Internal(sibling) = &mut (*sibling.as_ptr()) {
+                sibling.parent = Some(new_root);
+            }
 
-                    node.parent = Some(new_root);
-                    self.root = Some(new_root);
-                } else {
-                    // Recursively insert the split key into the parent.
-                    self.insert_internal(split_key, node.parent.unwrap(), sibling);
-                }
+            // Use the new root.
+            node.parent = Some(new_root);
+            self.root = Some(new_root);
+        } else {
+            // Insert the split key into the parent.
+            self.insert_internal(split_key, node.parent.unwrap(), sibling);
+        }
+    }
+
+    unsafe fn insert_internal(&mut self, key: K, cursor: Link<K, V>, child: Link<K, V>)
+    where
+        K: Ord + Clone,
+    {
+        if let Node::Internal(node) = &mut (*cursor.as_ptr()) {
+            // Find where the key should go.
+            let index = match node.keys.binary_search(&key) {
+                Ok(index) => index + 1,
+                Err(index) => index,
+            };
+
+            // Insert the key and child.
+            node.keys.insert(index, key);
+            node.children.insert(index + 1, child);
+
+            // Split the node if it's overfull.
+            if node.is_overfull(self.order) {
+                self.split_internal(node, cursor);
             }
         }
     }
