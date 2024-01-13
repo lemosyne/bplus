@@ -4,4 +4,4 @@ mod map;
 mod node;
 mod set;
 
-pub use {map::BPTreeMap, set::BPTreeSet};
+pub use {disk::BPTree, map::BPTreeMap, set::BPTreeSet};
