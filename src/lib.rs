@@ -1,3 +1,4 @@
+mod disk;
 mod iter;
 mod map;
 mod node;
