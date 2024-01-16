@@ -411,7 +411,7 @@ impl<K, V> BPTreeMap<K, V> {
                                 let min_key = right_sibling.keys.remove(0);
                                 let min_value = right_sibling.values.remove(0);
 
-                                // The min key/value pair from the left sibling
+                                // The min key/value pair from the right sibling
                                 // is larger than any key/value in the cursor
                                 // node.
                                 node.keys.push(min_key);
