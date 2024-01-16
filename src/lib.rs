@@ -1,7 +1,4 @@
 mod disk;
-mod iter;
-mod map;
-mod node;
-mod set;
+mod mem;
 
-pub use {disk::BPTree, map::BPTreeMap, set::BPTreeSet};
+pub use {disk::BPTree, mem::BPTreeMap};
