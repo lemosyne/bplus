@@ -753,13 +753,10 @@ impl<K, V> Drop for BPTreeMap<K, V> {
         fn recursive_drop<K, V>(node: Link<K, V>) {
             unsafe {
                 let boxed_node = Box::from_raw(node.as_ptr());
-                match *boxed_node {
-                    Node::Internal(node) => {
-                        for child in node.children {
-                            recursive_drop(child)
-                        }
+                if let Node::Internal(node) = *boxed_node {
+                    for child in node.children {
+                        recursive_drop(child);
                     }
-                    Node::Leaf(_) => {}
                 }
             }
         }
