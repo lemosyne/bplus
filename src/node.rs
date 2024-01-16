@@ -9,12 +9,6 @@ pub(crate) enum Node<K, V> {
     Leaf(Leaf<K, V>),
 }
 
-impl<K, V> Node<K, V> {
-    pub unsafe fn to_link(self) -> Link<K, V> {
-        NonNull::new_unchecked(Box::into_raw(Box::new(self)))
-    }
-}
-
 pub(crate) struct Internal<K, V> {
     pub(crate) keys: Vec<K>,
     pub(crate) children: Vec<Link<K, V>>,
