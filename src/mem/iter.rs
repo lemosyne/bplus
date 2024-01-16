@@ -4,6 +4,76 @@ use super::{
 };
 use std::marker::PhantomData;
 
+impl<K, V> BPTreeMap<K, V> {
+    pub fn iter(&self) -> Iter<K, V> {
+        if let Some(root) = self.root {
+            unsafe {
+                let mut cursor = root;
+                loop {
+                    match &(*cursor.as_ptr()) {
+                        Node::Internal(node) => cursor = node.children[0],
+                        Node::Leaf(_) => {
+                            break Iter {
+                                cursor: Some(cursor),
+                                index: 0,
+                                len: self.len,
+                                _pd: PhantomData,
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            Iter {
+                cursor: None,
+                index: 0,
+                len: 0,
+                _pd: PhantomData,
+            }
+        }
+    }
+
+    pub fn iter_mut(&self) -> IterMut<K, V> {
+        if let Some(root) = self.root {
+            unsafe {
+                let mut cursor = root;
+                loop {
+                    match &(*cursor.as_ptr()) {
+                        Node::Internal(node) => cursor = node.children[0],
+                        Node::Leaf(_) => {
+                            break IterMut {
+                                cursor: Some(cursor),
+                                index: 0,
+                                len: self.len,
+                                _pd: PhantomData,
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            IterMut {
+                cursor: None,
+                index: 0,
+                len: 0,
+                _pd: PhantomData,
+            }
+        }
+    }
+
+    pub fn keys(&self) -> Keys<K, V> {
+        Keys(self.iter())
+    }
+
+    pub fn values(&self) -> Values<K, V> {
+        Values(self.iter())
+    }
+
+    pub fn values_mut(&mut self) -> ValuesMut<K, V> {
+        ValuesMut(self.iter_mut())
+    }
+}
+
 pub struct Iter<'a, K, V> {
     pub(crate) cursor: Option<Link<K, V>>,
     pub(crate) index: usize,
