@@ -46,7 +46,7 @@ impl<K, V> BPTree<K, V> {
                 if !node.is_underfull(self.order) || Some(cursor) == self.root {
                     // Clean out the root if we've emptied it.
                     if Some(cursor) == self.root && node.keys.is_empty() {
-                        cursor.free();
+                        cursor.reclaim(&self.path)?;
                         self.root = None;
                     }
                     return Ok(Some((key, value)));
@@ -183,8 +183,8 @@ impl<K, V> BPTree<K, V> {
                     };
 
                     // Reclaim the resources used by the root and child.
-                    cursor.free();
-                    child.free();
+                    cursor.reclaim(&self.path)?;
+                    child.reclaim(&self.path)?;
 
                     return Ok(());
                 }
@@ -203,7 +203,7 @@ impl<K, V> BPTree<K, V> {
                 .iter()
                 .position(|probe| *probe == child)
                 .unwrap();
-            node.children.remove(child_index).free();
+            node.children.remove(child_index).reclaim(&self.path)?;
 
             if !node.is_underfull(self.order) || Some(cursor) == self.root {
                 return Ok(());

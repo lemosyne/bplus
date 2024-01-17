@@ -1,6 +1,6 @@
 use super::error::Error;
 use path_macro::path;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     fs,
     ops::{Deref, DerefMut},
@@ -10,14 +10,6 @@ use std::{
 use uuid::Uuid;
 
 pub struct Link<K, V>(NonNull<NodeRef<K, V>>);
-
-impl<K, V> Clone for Link<K, V> {
-    fn clone(&self) -> Self {
-        Self(self.0)
-    }
-}
-
-impl<K, V> Copy for Link<K, V> {}
 
 impl<K, V> Link<K, V> {
     pub fn new(node: Node<K, V>) -> Self {
@@ -33,7 +25,23 @@ impl<K, V> Link<K, V> {
             let _ = Box::from_raw(self.as_ptr());
         }
     }
+
+    pub fn reclaim(self, path: &Path) -> Result<(), Error> {
+        unsafe {
+            (*self.as_ptr()).reclaim(path)?;
+            self.free();
+            Ok(())
+        }
+    }
 }
+
+impl<K, V> Clone for Link<K, V> {
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+
+impl<K, V> Copy for Link<K, V> {}
 
 impl<K, V> Deref for Link<K, V> {
     type Target = NonNull<NodeRef<K, V>>;
@@ -58,7 +66,7 @@ impl<K, V> PartialEq for Link<K, V> {
 impl<K, V> Serialize for Link<K, V> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         unsafe { (*self.0.as_ptr()).serialize(serializer) }
     }
@@ -67,7 +75,7 @@ impl<K, V> Serialize for Link<K, V> {
 impl<'de, K, V> Deserialize<'de> for Link<K, V> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         unsafe {
             Ok(Link(NonNull::new_unchecked(Box::into_raw(Box::new(
@@ -116,16 +124,18 @@ impl<K, V> NodeRef<K, V> {
             }
         }
     }
-}
 
-// impl<K, V> Clone for NodeRef<K, V> {
-//     fn clone(&self) -> Self {
-//         match self {
-//             Self::Loaded(node) => Self::Loaded(node.clone()),
-//             Self::Unloaded(uuid) => Self::Unloaded(uuid.clone()),
-//         }
-//     }
-// }
+    pub fn reclaim(&self, path: &Path) -> Result<(), Error> {
+        match self {
+            Self::Loaded(node) => match node {
+                Node::Internal(node) => fs::remove_file(path![path / node.uuid.to_string()])?,
+                Node::Leaf(node) => fs::remove_file(path![path / node.uuid.to_string()])?,
+            },
+            Self::Unloaded(uuid) => fs::remove_file(path![path / uuid.to_string()])?,
+        }
+        Ok(())
+    }
+}
 
 impl<K, V> PartialEq for NodeRef<K, V> {
     fn eq(&self, other: &Self) -> bool {
@@ -154,7 +164,7 @@ impl<K, V> PartialEq for NodeRef<K, V> {
 impl<K, V> Serialize for NodeRef<K, V> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         match self {
             NodeRef::Loaded(node) => match node {
@@ -169,7 +179,7 @@ impl<K, V> Serialize for NodeRef<K, V> {
 impl<'de, K, V> Deserialize<'de> for NodeRef<K, V> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         Ok(NodeRef::Unloaded(Uuid::deserialize(deserializer)?))
     }
