@@ -8,4 +8,7 @@ pub enum Error {
 
     #[error("unknown key")]
     UnknownKey,
+
+    #[error("failed serialization/deserizalization")]
+    Serde,
 }

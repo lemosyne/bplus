@@ -1,13 +1,16 @@
 pub mod error;
 mod get;
 mod insert;
+mod iter;
 mod node;
 mod persist;
 mod remove;
 
+use serde::Deserialize;
+
 use self::{
     error::Error,
-    node::{Link, Node},
+    node::{Link, Node, NodeRef},
 };
 use std::{
     borrow::Borrow,
@@ -47,7 +50,8 @@ impl<K, V> BPTree<K, V> {
 
     pub fn contains_key<Q>(&self, key: &Q) -> Result<bool, Error>
     where
-        K: Borrow<Q>,
+        for<'de> K: Deserialize<'de> + Borrow<Q>,
+        for<'de> V: Deserialize<'de>,
         Q: Ord,
     {
         Ok(self.get(key)?.is_some())
@@ -58,22 +62,34 @@ impl<K, V> Drop for BPTree<K, V> {
     fn drop(&mut self) {
         fn recursive_drop<K, V>(node: Link<K, V>) {
             unsafe {
-                match node {
-                    Link::Loaded(node) => {
-                        let boxed_node = Box::from_raw(node.as_ptr());
-                        if let Node::Internal(node) = *boxed_node {
-                            for child in node.children {
-                                recursive_drop(child);
+                match &(*node.as_ptr()) {
+                    NodeRef::Loaded(node) => {
+                        if let Node::Internal(node) = node {
+                            for child in &node.children {
+                                recursive_drop(*child);
                             }
                         }
                     }
-                    Link::Unloaded(_) => {}
+                    NodeRef::Unloaded(_) => {}
                 }
+
+                node.free();
             }
         }
 
-        if let Some(root) = &self.root {
-            recursive_drop(root.clone());
+        if let Some(root) = self.root {
+            recursive_drop(root);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_works() -> Result<(), Error> {
+        // let mut tree =
+        todo!()
     }
 }
