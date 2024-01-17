@@ -16,6 +16,7 @@ name = "bplus"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "path_macro",
  "serde",
  "thiserror",
  "uuid",
@@ -43,6 +44,12 @@ name = "libc"
 version = "0.2.150"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89d92a4743f9a61002fae18374ed11e7973f530cb3a3255fb354818118b2203c"
+
+[[package]]
+name = "path_macro"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6e819bbd49d5939f682638fa54826bf1650abddcd65d000923de8ad63cc7d15"
 
 [[package]]
 name = "proc-macro2"
