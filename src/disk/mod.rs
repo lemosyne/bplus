@@ -1,12 +1,13 @@
-mod error;
+pub mod error;
 mod get;
 mod insert;
 mod node;
+mod persist;
 mod remove;
 
 use self::{
     error::Error,
-    node::{Link, Node, NodeRef},
+    node::{Link, Node},
 };
 use std::{
     borrow::Borrow,
@@ -57,17 +58,22 @@ impl<K, V> Drop for BPTree<K, V> {
     fn drop(&mut self) {
         fn recursive_drop<K, V>(node: Link<K, V>) {
             unsafe {
-                let boxed_node = Box::from_raw(node.as_ptr());
-                if let NodeRef::Loaded(Node::Internal(node)) = *boxed_node {
-                    for child in node.children {
-                        recursive_drop(child);
+                match node {
+                    Link::Loaded(node) => {
+                        let boxed_node = Box::from_raw(node.as_ptr());
+                        if let Node::Internal(node) = *boxed_node {
+                            for child in node.children {
+                                recursive_drop(child);
+                            }
+                        }
                     }
+                    Link::Unloaded(_) => {}
                 }
             }
         }
 
-        if let Some(root) = self.root {
-            recursive_drop(root);
+        if let Some(root) = &self.root {
+            recursive_drop(root.clone());
         }
     }
 }

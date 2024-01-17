@@ -1,6 +1,6 @@
 use super::{
     error::Error,
-    node::{Internal, Leaf, Link, Node, NodeRef},
+    node::{Internal, Leaf, Link, Node},
     BPTree,
 };
 use std::{mem, ptr::NonNull};
@@ -13,7 +13,7 @@ impl<K, V> BPTree<K, V> {
     {
         unsafe {
             if self.root.is_none() {
-                let new_root = NonNull::new_unchecked(Box::into_raw(Box::new(NodeRef::Loaded(
+                let new_root = Link::Loaded(NonNull::new_unchecked(Box::into_raw(Box::new(
                     Node::Leaf(Leaf {
                         uuid: Uuid::new_v4(),
                         keys: vec![key],
@@ -31,7 +31,7 @@ impl<K, V> BPTree<K, V> {
             let mut cursor = self.root.unwrap();
 
             // Descend the tree to the leaf node that the key should go in.
-            while let Node::Internal(node) = (*cursor.as_ptr()).access(&self.path)? {
+            while let Node::Internal(node) = cursor.access(&self.path)? {
                 let index = match node.keys.binary_search(&key) {
                     Ok(index) => index + 1,
                     Err(index) => index,
@@ -39,7 +39,7 @@ impl<K, V> BPTree<K, V> {
                 cursor = node.children[index];
             }
 
-            if let Node::Leaf(node) = (*cursor.as_ptr()).access(&self.path)? {
+            if let Node::Leaf(node) = cursor.access_mut(&self.path)? {
                 // Check if we already have a copy of this key and just need to
                 // swap in the updated value.
                 match node.keys.binary_search(&key) {
@@ -66,8 +66,8 @@ impl<K, V> BPTree<K, V> {
                         let split_key = sibling_keys[0].clone();
 
                         // Make the sibling now so we can link to it.
-                        let sibling = NonNull::new_unchecked(Box::into_raw(Box::new(
-                            NodeRef::Loaded(Node::Leaf(Leaf {
+                        let sibling = Link::Loaded(NonNull::new_unchecked(Box::into_raw(
+                            Box::new(Node::Leaf(Leaf {
                                 uuid: Uuid::new_v4(),
                                 keys: sibling_keys,
                                 values: sibling_values,
@@ -79,10 +79,10 @@ impl<K, V> BPTree<K, V> {
                         // Connect to the sibling.
                         node.next_leaf = Some(sibling);
 
-                        if Some(cursor) == self.root {
+                        if Some(&cursor) == self.root.as_ref() {
                             // We need a new root since we split it.
-                            let new_root = NonNull::new_unchecked(Box::into_raw(Box::new(
-                                NodeRef::Loaded(Node::Internal(Internal {
+                            let new_root = Link::Loaded(NonNull::new_unchecked(Box::into_raw(
+                                Box::new(Node::Internal(Internal {
                                     uuid: Uuid::new_v4(),
                                     keys: vec![split_key],
                                     children: vec![cursor, sibling],
@@ -91,12 +91,12 @@ impl<K, V> BPTree<K, V> {
                             )));
 
                             // Connect the cursor to the new root.
-                            if let Node::Leaf(node) = (*cursor.as_ptr()).access(&self.path)? {
+                            if let Node::Leaf(node) = cursor.access_mut(&self.path)? {
                                 node.parent = Some(new_root);
                             }
 
                             // Connect the sibling to the new root.
-                            if let Node::Leaf(sibling) = (*cursor.as_ptr()).access(&self.path)? {
+                            if let Node::Leaf(sibling) = cursor.access_mut(&self.path)? {
                                 sibling.parent = Some(new_root);
                             }
 
@@ -124,7 +124,7 @@ impl<K, V> BPTree<K, V> {
         K: Ord + Clone,
     {
         unsafe {
-            if let Node::Internal(node) = (*cursor.as_ptr()).access(&self.path)? {
+            if let Node::Internal(node) = cursor.access_mut(&self.path)? {
                 // Find where the key should go.
                 let index = match node.keys.binary_search(&key) {
                     Ok(index) => index + 1,
@@ -147,7 +147,7 @@ impl<K, V> BPTree<K, V> {
                 let split_key = node.keys.pop().unwrap();
 
                 // Make the sibling now so we can link to it.
-                let sibling = NonNull::new_unchecked(Box::into_raw(Box::new(NodeRef::Loaded(
+                let sibling = Link::Loaded(NonNull::new_unchecked(Box::into_raw(Box::new(
                     Node::Internal(Internal {
                         uuid: Uuid::new_v4(),
                         keys: sibling_keys,
@@ -157,9 +157,9 @@ impl<K, V> BPTree<K, V> {
                 ))));
 
                 // Fix up the parent for the sibling children.
-                if let Node::Internal(sibling_node) = (*sibling.as_ptr()).access(&self.path)? {
+                if let Node::Internal(sibling_node) = sibling.access_mut(&self.path)? {
                     for child in sibling_node.children.iter_mut() {
-                        match (*child.as_ptr()).access(&self.path)? {
+                        match child.access_mut(&self.path)? {
                             Node::Internal(child) => {
                                 child.parent = Some(sibling);
                             }
@@ -170,18 +170,18 @@ impl<K, V> BPTree<K, V> {
                     }
                 }
 
-                if Some(cursor) == self.root {
+                if Some(&cursor) == self.root.as_ref() {
                     // The root split, so create a new root.
-                    let new_root = NonNull::new_unchecked(Box::into_raw(Box::new(
-                        NodeRef::Loaded(Node::Internal(Internal {
+                    let new_root = Link::Loaded(NonNull::new_unchecked(Box::into_raw(Box::new(
+                        Node::Internal(Internal {
                             uuid: Uuid::new_v4(),
                             keys: vec![split_key],
                             children: vec![cursor, sibling],
                             parent: None,
-                        })),
-                    )));
+                        }),
+                    ))));
 
-                    if let Node::Internal(sibling) = (*sibling.as_ptr()).access(&self.path)? {
+                    if let Node::Internal(sibling) = sibling.access_mut(&self.path)? {
                         sibling.parent = Some(new_root);
                     }
 
