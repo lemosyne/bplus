@@ -37,7 +37,7 @@ impl<K, V> BPTreeMap<K, V> {
         self.get_key_value(key).map(|(_, value)| value)
     }
 
-    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
+    pub fn get_key_value_mut<Q>(&self, key: &Q) -> Option<(&K, &mut V)>
     where
         K: Borrow<Q>,
         Q: Ord,
@@ -56,11 +56,19 @@ impl<K, V> BPTreeMap<K, V> {
             if let Node::Leaf(node) = &mut (*cursor.as_ptr()) {
                 node.keys
                     .binary_search_by(|probe| probe.borrow().cmp(key))
-                    .map(|index| &mut node.values[index])
+                    .map(|index| (&node.keys[index], &mut node.values[index]))
                     .ok()
             } else {
                 None
             }
         }
+    }
+
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
+    where
+        K: Borrow<Q>,
+        Q: Ord,
+    {
+        self.get_key_value_mut(key).map(|(_, value)| value)
     }
 }

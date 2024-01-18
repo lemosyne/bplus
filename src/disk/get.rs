@@ -46,7 +46,7 @@ impl<K, V> BPTree<K, V> {
         Ok(self.get_key_value(key)?.map(|(_, value)| value))
     }
 
-    pub fn get_mut<Q>(&self, key: &Q) -> Result<Option<&mut V>, Error>
+    pub fn get_key_value_mut<Q>(&self, key: &Q) -> Result<Option<(&K, &mut V)>, Error>
     where
         for<'de> K: Deserialize<'de> + Borrow<Q>,
         for<'de> V: Deserialize<'de>,
@@ -71,11 +71,20 @@ impl<K, V> BPTree<K, V> {
                 Ok(node
                     .keys
                     .binary_search_by(|probe| probe.borrow().cmp(key))
-                    .map(|index| &mut node.values[index])
+                    .map(|index| (&node.keys[index], &mut node.values[index]))
                     .ok())
             } else {
                 Ok(None)
             }
         }
+    }
+
+    pub fn get_mut<Q>(&self, key: &Q) -> Result<Option<&mut V>, Error>
+    where
+        for<'de> K: Deserialize<'de> + Borrow<Q>,
+        for<'de> V: Deserialize<'de>,
+        Q: Ord,
+    {
+        Ok(self.get_key_value_mut(key)?.map(|(_, value)| value))
     }
 }

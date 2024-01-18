@@ -21,6 +21,7 @@ impl<K, V> BPTree<K, V> {
                     values: vec![value],
                     parent: None,
                     next_leaf: None,
+                    dirty: true,
                 }));
 
                 self.root = Some(new_root);
@@ -72,6 +73,7 @@ impl<K, V> BPTree<K, V> {
                             values: sibling_values,
                             parent: node.parent,
                             next_leaf: node.next_leaf,
+                            dirty: true,
                         }));
 
                         // Connect to the sibling.
@@ -84,6 +86,7 @@ impl<K, V> BPTree<K, V> {
                                 keys: vec![split_key],
                                 children: vec![cursor, sibling],
                                 parent: None,
+                                dirty: true,
                             }));
 
                             // Connect the cursor to the new root.
@@ -151,6 +154,7 @@ impl<K, V> BPTree<K, V> {
                     keys: sibling_keys,
                     children: sibling_children,
                     parent: node.parent,
+                    dirty: true,
                 }));
 
                 // Fix up the parent for the sibling children.
@@ -174,6 +178,7 @@ impl<K, V> BPTree<K, V> {
                         keys: vec![split_key],
                         children: vec![cursor, sibling],
                         parent: None,
+                        dirty: true,
                     }));
 
                     if let Node::Internal(sibling) = (*sibling.as_ptr()).access_mut(&self.path)? {

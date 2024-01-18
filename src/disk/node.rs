@@ -203,6 +203,7 @@ pub(crate) struct Internal<K, V> {
     pub(crate) keys: Vec<K>,
     pub(crate) children: Vec<Link<K, V>>,
     pub(crate) parent: Option<Link<K, V>>,
+    pub(crate) dirty: bool,
 }
 
 impl<K, V> Internal<K, V> {
@@ -226,6 +227,7 @@ pub(crate) struct Leaf<K, V> {
     pub(crate) values: Vec<V>,
     pub(crate) parent: Option<Link<K, V>>,
     pub(crate) next_leaf: Option<Link<K, V>>,
+    pub(crate) dirty: bool,
 }
 
 impl<K, V> Leaf<K, V> {
