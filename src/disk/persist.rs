@@ -129,13 +129,14 @@ impl<K, V> BPTree<K, V> {
         while !key_persisted {
             let node = unsafe { (*cursor.as_ptr()).access_mut(&self.path)? };
 
-            match node {
+            let is_dirty = match node {
                 Node::Internal(node) => {
                     let index = match node.keys.binary_search_by(|probe| probe.borrow().cmp(key)) {
                         Ok(index) => index + 1,
                         Err(index) => index,
                     };
                     cursor = node.children[index];
+                    node.is_dirty
                 }
                 Node::Leaf(node) => {
                     if node
@@ -146,10 +147,13 @@ impl<K, V> BPTree<K, V> {
                         return Err(Error::UnknownKey);
                     }
                     key_persisted = true;
+                    node.is_dirty
                 }
-            }
+            };
 
-            node.persist(&self.path)?;
+            if is_dirty {
+                node.persist(&self.path)?;
+            }
         }
 
         Ok(())
