@@ -128,10 +128,16 @@ impl<K, V> NodeRef<K, V> {
     pub fn reclaim(&self, path: &Path) -> Result<(), Error> {
         match self {
             Self::Loaded(node) => match node {
-                Node::Internal(node) => fs::remove_file(path![path / node.uuid.to_string()])?,
-                Node::Leaf(node) => fs::remove_file(path![path / node.uuid.to_string()])?,
+                Node::Internal(node) => {
+                    let _ = fs::remove_file(path![path / node.uuid.to_string()]);
+                }
+                Node::Leaf(node) => {
+                    let _ = fs::remove_file(path![path / node.uuid.to_string()]);
+                }
             },
-            Self::Unloaded(uuid) => fs::remove_file(path![path / uuid.to_string()])?,
+            Self::Unloaded(uuid) => {
+                let _ = fs::remove_file(path![path / uuid.to_string()]);
+            }
         }
         Ok(())
     }

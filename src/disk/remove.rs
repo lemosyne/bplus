@@ -145,7 +145,7 @@ impl<K, V> BPTree<K, V> {
                             // The clone is to satisfy miri's stacked borrow
                             // check.
                             self.remove_entry_internal(
-                                parent.keys[cursor_index + 1].clone().borrow(),
+                                parent.keys[cursor_index].clone().borrow(),
                                 node.parent.unwrap(),
                                 parent.children[cursor_index + 1],
                             )?;

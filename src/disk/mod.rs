@@ -6,14 +6,14 @@ mod node;
 mod persist;
 mod remove;
 
-use serde::Deserialize;
-
 use self::{
     error::Error,
     node::{Link, Node, NodeRef},
 };
+use serde::Deserialize;
 use std::{
     borrow::Borrow,
+    fmt::Debug,
     path::{Path, PathBuf},
 };
 
@@ -56,6 +56,46 @@ impl<K, V> BPTree<K, V> {
     {
         Ok(self.get(key)?.is_some())
     }
+
+    fn pretty_print_recursive(&self, node: &Node<K, V>, depth: usize) -> Result<(), Error>
+    where
+        for<'de> K: Deserialize<'de> + Debug,
+        for<'de> V: Deserialize<'de> + Debug,
+    {
+        print!("{}", "    ".repeat(depth));
+
+        match node {
+            Node::Internal(node) => {
+                println!("{:?}", node.keys);
+                for child in &node.children {
+                    unsafe {
+                        self.pretty_print_recursive(
+                            (*child.as_ptr()).access(&self.path)?,
+                            depth + 1,
+                        )?;
+                    }
+                }
+            }
+            Node::Leaf(node) => {
+                println!("{:?}", node.keys);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn pretty_print(&self) -> Result<(), Error>
+    where
+        for<'de> K: Deserialize<'de> + Debug,
+        for<'de> V: Deserialize<'de> + Debug,
+    {
+        unsafe {
+            if let Some(root) = self.root {
+                self.pretty_print_recursive((*root.as_ptr()).access(&self.path)?, 0)?;
+            }
+            Ok(())
+        }
+    }
 }
 
 impl<K, V> Drop for BPTree<K, V> {
@@ -89,7 +129,21 @@ mod tests {
 
     #[test]
     fn it_works() -> Result<(), Error> {
-        // let mut tree =
-        todo!()
+        let mut tree = BPTree::new("/tmp/bptree");
+
+        for i in 0..10 {
+            // println!("Insert {i}:");
+            tree.insert(i, i.to_string())?;
+            // tree.pretty_print()?;
+        }
+
+        tree.pretty_print()?;
+        for i in 0..10 {
+            println!("Delete {i}:");
+            tree.remove(&i)?;
+            tree.pretty_print()?;
+        }
+
+        Ok(())
     }
 }

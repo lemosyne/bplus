@@ -92,10 +92,10 @@ impl<K, V> BPTree<K, V> {
                             }
 
                             // Connect the sibling to the new root.
-                            if let Node::Leaf(sibling) =
-                                (*cursor.as_ptr()).access_mut(&self.path)?
+                            if let Node::Leaf(sibling_node) =
+                                (*sibling.as_ptr()).access_mut(&self.path)?
                             {
-                                sibling.parent = Some(new_root);
+                                sibling_node.parent = Some(new_root);
                             }
 
                             // Use the new root.

@@ -117,4 +117,22 @@ mod tests {
             println!("{:?}", tree);
         }
     }
+
+    #[test]
+    fn huh() {
+        let mut tree = BPTreeMap::new();
+
+        for n in 0..10 {
+            // println!("Insert {n}:");
+            tree.insert(n, ());
+            // println!("{:?}", tree);
+        }
+
+        println!("{:?}", tree);
+        for n in 0..10 {
+            println!("Delete {n}:");
+            tree.remove(&n);
+            println!("{:?}", tree);
+        }
+    }
 }
