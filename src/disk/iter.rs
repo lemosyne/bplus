@@ -11,7 +11,7 @@ impl<K, V> BPTree<K, V> {
         Iter {
             cursor: self.root,
             index: 0,
-            len: 0,
+            len: self.len,
             errored: false,
             at_leaves: false,
             tree: self,
@@ -22,7 +22,7 @@ impl<K, V> BPTree<K, V> {
         IterMut {
             cursor: self.root,
             index: 0,
-            len: 0,
+            len: self.len,
             errored: false,
             at_leaves: false,
             tree: self,
@@ -75,8 +75,9 @@ where
                                 cursor = node.children[0];
                             }
                             Node::Leaf(_) => {
-                                self.at_leaves = true;
                                 self.cursor = Some(cursor);
+                                self.at_leaves = true;
+                                break;
                             }
                         },
                         Err(err) => {
@@ -95,13 +96,14 @@ where
                     Node::Leaf(node) => {
                         let result = (&node.keys[self.index], &node.values[self.index]);
 
+                        self.len -= 1;
                         self.index += 1;
+
                         if self.index >= node.keys.len() {
                             self.index = 0;
                             self.cursor = node.next_leaf;
                         }
 
-                        self.len -= 1;
                         Some(Ok(result))
                     }
                 },
@@ -120,7 +122,7 @@ pub struct IterMut<'a, K, V> {
     pub(crate) len: usize,
     pub(crate) errored: bool,
     pub(crate) at_leaves: bool,
-    pub(crate) tree: &'a BPTree<K, V>,
+    pub(crate) tree: &'a mut BPTree<K, V>,
 }
 
 impl<'a, K, V> Iterator for IterMut<'a, K, V>
@@ -146,8 +148,9 @@ where
                                 cursor = node.children[0];
                             }
                             Node::Leaf(_) => {
-                                self.at_leaves = true;
                                 self.cursor = Some(cursor);
+                                self.at_leaves = true;
+                                break;
                             }
                         },
                         Err(err) => {
@@ -166,13 +169,14 @@ where
                     Node::Leaf(node) => {
                         let result = (&node.keys[self.index], &mut node.values[self.index]);
 
+                        self.len -= 1;
                         self.index += 1;
+
                         if self.index >= node.keys.len() {
                             self.index = 0;
                             self.cursor = node.next_leaf;
                         }
 
-                        self.len -= 1;
                         Some(Ok(result))
                     }
                 },

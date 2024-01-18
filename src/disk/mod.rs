@@ -131,16 +131,29 @@ mod tests {
     fn it_works() -> Result<(), Error> {
         let mut tree = BPTree::new("/tmp/bptree");
 
-        for i in 0..10 {
-            // println!("Insert {i}:");
+        for i in [25, 4, 1, 16, 9, 20, 13, 15, 10, 11, 12] {
+            println!("Insert {i}:");
             tree.insert(i, i.to_string())?;
-            // tree.pretty_print()?;
+            tree.pretty_print()?;
         }
 
-        tree.pretty_print()?;
-        for i in 0..10 {
-            println!("Delete {i}:");
-            tree.remove(&i)?;
+        for n in tree.iter().filter_map(Result::ok) {
+            println!("{n:?}");
+        }
+
+        for n in [13, 15, 1] {
+            println!("Delete {n}:");
+            tree.remove_entry(&n)?;
+            tree.pretty_print()?;
+        }
+
+        for n in tree.iter().filter_map(Result::ok) {
+            println!("{n:?}");
+        }
+
+        for n in [25, 4, 16, 9, 20, 10, 11, 12] {
+            println!("Delete {n}:");
+            tree.remove_entry(&n)?;
             tree.pretty_print()?;
         }
 
