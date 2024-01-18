@@ -13,7 +13,7 @@ use self::{
 use serde::Deserialize;
 use std::{
     borrow::Borrow,
-    fmt::Debug,
+    fmt::{self, Debug},
     path::{Path, PathBuf},
 };
 
@@ -123,6 +123,23 @@ impl<K, V> Drop for BPTree<K, V> {
     }
 }
 
+impl<K, V> fmt::Debug for BPTree<K, V>
+where
+    for<'de> K: Deserialize<'de> + Debug,
+    for<'de> V: Deserialize<'de> + Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{")?;
+        for (i, (key, value)) in self.iter().filter_map(Result::ok).enumerate() {
+            write!(f, "{key:?}: {value:?}")?;
+            if i + 1 != self.len {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, "}}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,12 +157,14 @@ mod tests {
         for n in tree.iter().filter_map(Result::ok) {
             println!("{n:?}");
         }
+        println!("{:?}", tree);
 
         for n in [13, 15, 1] {
             println!("Delete {n}:");
             tree.remove_entry(&n)?;
             tree.pretty_print()?;
         }
+        println!("{:?}", tree);
 
         for n in tree.iter().filter_map(Result::ok) {
             println!("{n:?}");

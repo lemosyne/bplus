@@ -5,7 +5,10 @@ mod node;
 mod remove;
 
 use self::node::{Link, Node};
-use std::{borrow::Borrow, fmt::Debug};
+use std::{
+    borrow::Borrow,
+    fmt::{self, Debug},
+};
 
 const DEFAULT_ORDER: usize = 3;
 
@@ -104,6 +107,23 @@ impl<K, V> Default for BPTreeMap<K, V> {
     }
 }
 
+impl<K, V> fmt::Debug for BPTreeMap<K, V>
+where
+    K: Debug,
+    V: Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{")?;
+        for (i, (key, value)) in self.iter().enumerate() {
+            write!(f, "{key:?}: {value:?}")?;
+            if i + 1 != self.len {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, "}}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,6 +141,7 @@ mod tests {
         for n in tree.iter() {
             println!("{n:?}");
         }
+        println!("{:?}", tree);
 
         for n in [13, 15, 1] {
             println!("Delete {n}:");
@@ -131,6 +152,7 @@ mod tests {
         for n in tree.iter() {
             println!("{n:?}");
         }
+        println!("{:?}", tree);
 
         for n in [25, 4, 16, 9, 20, 10, 11, 12] {
             println!("Delete {n}:");
