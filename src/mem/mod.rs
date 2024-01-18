@@ -5,10 +5,7 @@ mod node;
 mod remove;
 
 use self::node::{Link, Node};
-use std::{
-    borrow::Borrow,
-    fmt::{self, Debug},
-};
+use std::{borrow::Borrow, fmt::Debug};
 
 const DEFAULT_ORDER: usize = 3;
 
@@ -46,6 +43,40 @@ impl<K, V> BPTreeMap<K, V> {
     {
         self.get(key).is_some()
     }
+
+    fn pretty_print_recursive(&self, node: &Node<K, V>, depth: usize)
+    where
+        K: Debug,
+        V: Debug,
+    {
+        print!("{}", "    ".repeat(depth));
+
+        match node {
+            Node::Internal(node) => {
+                println!("{:?}", node.keys);
+                for child in &node.children {
+                    unsafe {
+                        self.pretty_print_recursive(&(*child.as_ptr()), depth + 1);
+                    }
+                }
+            }
+            Node::Leaf(node) => {
+                println!("{:?}", node.keys);
+            }
+        }
+    }
+
+    pub fn pretty_print(&self)
+    where
+        K: Debug,
+        V: Debug,
+    {
+        unsafe {
+            if let Some(root) = self.root {
+                self.pretty_print_recursive(&(*root.as_ptr()), 0)
+            }
+        }
+    }
 }
 
 impl<K, V> Drop for BPTreeMap<K, V> {
@@ -73,20 +104,6 @@ impl<K, V> Default for BPTreeMap<K, V> {
     }
 }
 
-impl<K, V> Debug for BPTreeMap<K, V>
-where
-    K: Debug,
-    V: Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(root) = self.root {
-            unsafe { write!(f, "{:?}", &(*root.as_ptr())) }
-        } else {
-            Ok(())
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,13 +115,17 @@ mod tests {
         for n in [25, 4, 1, 16, 9, 20, 13, 15, 10, 11, 12] {
             println!("Insert {n}:");
             tree.insert(n, ());
-            println!("{:?}", tree);
+            tree.pretty_print();
+        }
+
+        for n in tree.iter() {
+            println!("{n:?}");
         }
 
         for n in [13, 15, 1] {
             println!("Delete {n}:");
             tree.remove_entry(&n);
-            println!("{:?}", tree);
+            tree.pretty_print();
         }
 
         for n in tree.iter() {
@@ -114,7 +135,7 @@ mod tests {
         for n in [25, 4, 16, 9, 20, 10, 11, 12] {
             println!("Delete {n}:");
             tree.remove_entry(&n);
-            println!("{:?}", tree);
+            tree.pretty_print();
         }
     }
 }
