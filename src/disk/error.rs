@@ -11,4 +11,7 @@ pub enum Error {
 
     #[error("failed serialization/deserizalization")]
     Serde,
+
+    #[error("bad b+-tree")]
+    BadBPTree,
 }

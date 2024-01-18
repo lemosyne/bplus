@@ -9,6 +9,7 @@ use std::{
     borrow::Borrow,
     fmt::{self, Debug},
     ops::{Deref, DerefMut},
+    path::PathBuf,
 };
 
 impl<K, V> BPTree<K, V> {
@@ -87,8 +88,8 @@ impl<K, V> BPTree<K, V> {
                             &node.keys[index],
                             ValueMutationGuard {
                                 value: &mut node.values[index],
-                                cursor: Some(cursor),
-                                tree: self,
+                                cursor,
+                                path: &self.path,
                             },
                         )
                     })
@@ -115,8 +116,8 @@ where
     for<'de> V: Deserialize<'de>,
 {
     value: &'a mut V,
-    cursor: Option<Link<K, V>>,
-    tree: &'a mut BPTree<K, V>,
+    cursor: Link<K, V>,
+    path: &'a PathBuf,
 }
 
 impl<'a, K, V> Deref for ValueMutationGuard<'a, K, V>
@@ -148,17 +149,9 @@ where
 {
     fn drop(&mut self) {
         unsafe {
-            while let Some(cursor) = self.cursor {
-                match (*cursor.as_ptr()).access_mut(&self.tree.path).unwrap() {
-                    Node::Internal(node) => {
-                        node.is_dirty = true;
-                        self.cursor = node.parent;
-                    }
-                    Node::Leaf(node) => {
-                        node.is_dirty = true;
-                        self.cursor = node.parent;
-                    }
-                }
+            match (*self.cursor.as_ptr()).access_mut(&self.path).unwrap() {
+                Node::Internal(node) => node.is_dirty = true,
+                Node::Leaf(node) => node.is_dirty = true,
             }
         }
     }

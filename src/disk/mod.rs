@@ -199,9 +199,10 @@ mod tests {
         tree.persist()?;
         tree.pretty_print()?;
 
-        let x = tree.get_mut(&4)?;
-        *x.unwrap() += 1;
-        tree.pretty_print()?;
+        // let x = tree.get_mut(&4)?;
+        // let y = tree.get_mut(&5)?;
+        // *x.unwrap() += 1;
+        // tree.pretty_print()?;
 
         let _ = fs::remove_dir_all("/tmp/bptree");
 

@@ -1,19 +1,50 @@
 use super::{error::Error, node::Node, BPTree};
 use path_macro::path;
 use serde::{Deserialize, Serialize};
-use std::{borrow::Borrow, fs, path::PathBuf};
+use std::{
+    borrow::Borrow,
+    fs,
+    path::{Path, PathBuf},
+};
 
 impl<K, V> BPTree<K, V> {
-    fn root_metadata_path(&self) -> PathBuf {
-        path![self.path / "root"]
+    fn root_metadata_path(path: &Path) -> PathBuf {
+        path![path / "root"]
     }
 
-    fn order_metadata_path(&self) -> PathBuf {
-        path![self.path / "order"]
+    fn order_metadata_path(path: &Path) -> PathBuf {
+        path![path / "order"]
     }
 
-    fn len_metadata_path(&self) -> PathBuf {
-        path![self.path / "len"]
+    fn len_metadata_path(path: &Path) -> PathBuf {
+        path![path / "len"]
+    }
+
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, Error> {
+        let root = bincode::deserialize(
+            &fs::read(Self::root_metadata_path(path.as_ref())).map_err(|_| Error::BadBPTree)?,
+        )
+        .map_err(|_| Error::Serde)?;
+
+        let order = bincode::deserialize(
+            &fs::read(Self::order_metadata_path(path.as_ref())).map_err(|_| Error::BadBPTree)?,
+        )
+        .map_err(|_| Error::Serde)?;
+
+        let len = bincode::deserialize(
+            &fs::read(Self::len_metadata_path(path.as_ref())).map_err(|_| Error::BadBPTree)?,
+        )
+        .map_err(|_| Error::Serde)?;
+
+        Ok(BPTree {
+            path: path.as_ref().into(),
+            root,
+            root_is_dirty: false,
+            order,
+            order_is_dirty: false,
+            len,
+            len_is_dirty: false,
+        })
     }
 
     fn persist_metadata(&mut self) -> Result<(), Error> {
@@ -21,7 +52,7 @@ impl<K, V> BPTree<K, V> {
 
         if self.root_is_dirty {
             fs::write(
-                self.root_metadata_path(),
+                Self::root_metadata_path(&self.path),
                 bincode::serialize(&self.root).map_err(|_| Error::Serde)?,
             )?;
             self.root_is_dirty = false;
@@ -29,7 +60,7 @@ impl<K, V> BPTree<K, V> {
 
         if self.order_is_dirty {
             fs::write(
-                self.order_metadata_path(),
+                Self::order_metadata_path(&self.path),
                 bincode::serialize(&self.order).map_err(|_| Error::Serde)?,
             )?;
             self.order_is_dirty = false;
@@ -37,7 +68,7 @@ impl<K, V> BPTree<K, V> {
 
         if self.len_is_dirty {
             fs::write(
-                self.len_metadata_path(),
+                Self::len_metadata_path(&self.path),
                 bincode::serialize(&self.len).map_err(|_| Error::Serde)?,
             )?;
             self.len_is_dirty = false;
@@ -57,7 +88,14 @@ impl<K, V> BPTree<K, V> {
             }
         }
 
-        node.persist(&self.path)?;
+        let is_dirty = match node {
+            Node::Internal(node) => node.is_dirty,
+            Node::Leaf(node) => node.is_dirty,
+        };
+
+        if is_dirty {
+            node.persist(&self.path)?;
+        }
 
         Ok(())
     }
