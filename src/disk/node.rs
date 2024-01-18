@@ -213,8 +213,8 @@ impl<K, V> Node<K, V> {
         fs::write(&path, &ser)?;
 
         match self {
-            Node::Internal(node) => node.dirty = false,
-            Node::Leaf(node) => node.dirty = false,
+            Node::Internal(node) => node.is_dirty = false,
+            Node::Leaf(node) => node.is_dirty = false,
         }
 
         Ok(())
@@ -228,7 +228,7 @@ pub(crate) struct Internal<K, V> {
     pub(crate) children: Vec<Link<K, V>>,
     pub(crate) parent: Option<Link<K, V>>,
     #[serde(skip)]
-    pub(crate) dirty: bool,
+    pub(crate) is_dirty: bool,
 }
 
 impl<K, V> Internal<K, V> {
@@ -253,7 +253,7 @@ pub(crate) struct Leaf<K, V> {
     pub(crate) parent: Option<Link<K, V>>,
     pub(crate) next_leaf: Option<Link<K, V>>,
     #[serde(skip)]
-    pub(crate) dirty: bool,
+    pub(crate) is_dirty: bool,
 }
 
 impl<K, V> Leaf<K, V> {

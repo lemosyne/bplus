@@ -22,15 +22,18 @@ impl<K, V> BPTree<K, V> {
         let mut cursor_index = 0;
 
         unsafe {
-            while let Node::Internal(node) = (*cursor.as_ptr()).access(&self.path)? {
+            while let Node::Internal(node) = (*cursor.as_ptr()).access_mut(&self.path)? {
                 cursor_index = match node.keys.binary_search_by(|probe| probe.borrow().cmp(key)) {
                     Ok(index) => index + 1,
                     Err(index) => index,
                 };
                 cursor = node.children[cursor_index];
+                node.is_dirty = true;
             }
 
             if let Node::Leaf(node) = (*cursor.as_ptr()).access_mut(&self.path)? {
+                node.is_dirty = true;
+
                 let index = node.keys.binary_search_by(|probe| probe.borrow().cmp(key));
                 if index.is_err() {
                     return Ok(None);
@@ -39,7 +42,9 @@ impl<K, V> BPTree<K, V> {
                 let index = index.unwrap();
                 let key = node.keys.remove(index);
                 let value = node.values.remove(index);
+
                 self.len -= 1;
+                self.len_is_dirty = true;
 
                 // Check if the node is now underfull or if its the root. The
                 // root is exceptional in that it is allowed to be underfull.
@@ -48,6 +53,7 @@ impl<K, V> BPTree<K, V> {
                     if Some(cursor) == self.root && node.keys.is_empty() {
                         cursor.reclaim(&self.path)?;
                         self.root = None;
+                        self.root_is_dirty = true;
                     }
                     return Ok(Some((key, value)));
                 }
@@ -62,6 +68,9 @@ impl<K, V> BPTree<K, V> {
                             (*parent.children[cursor_index - 1].as_ptr()).access_mut(&self.path)?
                         {
                             if left_sibling.has_extra_keys(self.order) {
+                                left_sibling.is_dirty = true;
+                                parent.is_dirty = true;
+
                                 // We want the max key/value pair from the left
                                 // sibling.
                                 let max_key = left_sibling.keys.pop().unwrap();
@@ -87,6 +96,9 @@ impl<K, V> BPTree<K, V> {
                             (*parent.children[cursor_index + 1].as_ptr()).access_mut(&self.path)?
                         {
                             if right_sibling.has_extra_keys(self.order) {
+                                right_sibling.is_dirty = true;
+                                parent.is_dirty = true;
+
                                 // We want the min key/value pair from the right
                                 // sibling.
                                 let min_key = right_sibling.keys.remove(0);
@@ -111,7 +123,9 @@ impl<K, V> BPTree<K, V> {
                         if let Node::Leaf(left_sibling) =
                             (*parent.children[cursor_index - 1].as_ptr()).access_mut(&self.path)?
                         {
-                            // Take/marge in the keys and values.
+                            left_sibling.is_dirty = true;
+
+                            // Take/merge in the keys and values.
                             left_sibling.keys.append(&mut node.keys);
                             left_sibling.values.append(&mut node.values);
 
@@ -134,6 +148,8 @@ impl<K, V> BPTree<K, V> {
                         if let Node::Leaf(right_sibling) =
                             (*parent.children[cursor_index + 1].as_ptr()).access_mut(&self.path)?
                         {
+                            right_sibling.is_dirty = true;
+
                             // Take/merge in the keys and values.
                             node.keys.append(&mut right_sibling.keys);
                             node.values.append(&mut right_sibling.values);
@@ -181,6 +197,7 @@ impl<K, V> BPTree<K, V> {
                     } else {
                         Some(node.children[1])
                     };
+                    self.root_is_dirty = true;
 
                     // Reclaim the resources used by the root and child.
                     cursor.reclaim(&self.path)?;
@@ -192,6 +209,8 @@ impl<K, V> BPTree<K, V> {
         }
 
         if let Node::Internal(node) = (*cursor.as_ptr()).access_mut(&self.path)? {
+            node.is_dirty = true;
+
             let index = node
                 .keys
                 .binary_search_by(|probe| probe.borrow().cmp(key))
@@ -225,6 +244,9 @@ impl<K, V> BPTree<K, V> {
                     {
                         // Does the left sibling have extra keys?
                         if left_sibling.has_extra_keys(self.order) {
+                            left_sibling.is_dirty = true;
+                            parent.is_dirty = true;
+
                             // Take the max key and clone it to the parent.
                             let mut max_key = left_sibling.keys.pop().unwrap();
                             mem::swap(&mut parent.keys[cursor_index - 1], &mut max_key);
@@ -251,6 +273,9 @@ impl<K, V> BPTree<K, V> {
                         (*parent.children[cursor_index + 1].as_ptr()).access_mut(&self.path)?
                     {
                         if right_sibling.has_extra_keys(self.order) {
+                            right_sibling.is_dirty = true;
+                            parent.is_dirty = true;
+
                             // Take the min key and clone it to the parent.
                             let mut min_key = right_sibling.keys.remove(0);
                             mem::swap(&mut parent.keys[cursor_index], &mut min_key);
@@ -264,8 +289,14 @@ impl<K, V> BPTree<K, V> {
                             match (*node.children[node.children.len() - 1].as_ptr())
                                 .access_mut(&self.path)?
                             {
-                                Node::Internal(min_child) => min_child.parent = Some(cursor),
-                                Node::Leaf(min_child) => min_child.parent = Some(cursor),
+                                Node::Internal(min_child) => {
+                                    min_child.parent = Some(cursor);
+                                    min_child.is_dirty = true;
+                                }
+                                Node::Leaf(min_child) => {
+                                    min_child.parent = Some(cursor);
+                                    min_child.is_dirty = true;
+                                }
                             }
 
                             return Ok(());
@@ -278,6 +309,8 @@ impl<K, V> BPTree<K, V> {
                     if let Node::Internal(left_sibling) =
                         (*parent.children[cursor_index - 1].as_ptr()).access_mut(&self.path)?
                     {
+                        left_sibling.is_dirty = true;
+
                         // Left sibling keys, split key, then cursor keys.
                         left_sibling
                             .keys
@@ -289,9 +322,11 @@ impl<K, V> BPTree<K, V> {
                             match (*child.as_ptr()).access_mut(&self.path)? {
                                 Node::Internal(child) => {
                                     child.parent = Some(parent.children[cursor_index - 1]);
+                                    child.is_dirty = true;
                                 }
                                 Node::Leaf(child) => {
                                     child.parent = Some(parent.children[cursor_index - 1]);
+                                    child.is_dirty = true;
                                 }
                             }
                         }
@@ -317,6 +352,8 @@ impl<K, V> BPTree<K, V> {
                     if let Node::Internal(right_sibling) =
                         (*parent.children[cursor_index + 1].as_ptr()).access_mut(&self.path)?
                     {
+                        right_sibling.is_dirty = true;
+
                         // Cursor keys, split key, then right sibling keys.
                         node.keys.push(parent.keys[cursor_index].clone());
                         node.keys.append(&mut right_sibling.keys);

@@ -1,8 +1,51 @@
 use super::{error::Error, node::Node, BPTree};
+use path_macro::path;
 use serde::{Deserialize, Serialize};
-use std::{borrow::Borrow, fs};
+use std::{borrow::Borrow, fs, path::PathBuf};
 
 impl<K, V> BPTree<K, V> {
+    fn root_metadata_path(&self) -> PathBuf {
+        path![self.path / "root"]
+    }
+
+    fn order_metadata_path(&self) -> PathBuf {
+        path![self.path / "order"]
+    }
+
+    fn len_metadata_path(&self) -> PathBuf {
+        path![self.path / "len"]
+    }
+
+    fn persist_metadata(&mut self) -> Result<(), Error> {
+        fs::create_dir_all(&self.path)?;
+
+        if self.root_is_dirty {
+            fs::write(
+                self.root_metadata_path(),
+                bincode::serialize(&self.root).map_err(|_| Error::Serde)?,
+            )?;
+            self.root_is_dirty = false;
+        }
+
+        if self.order_is_dirty {
+            fs::write(
+                self.order_metadata_path(),
+                bincode::serialize(&self.order).map_err(|_| Error::Serde)?,
+            )?;
+            self.order_is_dirty = false;
+        }
+
+        if self.len_is_dirty {
+            fs::write(
+                self.len_metadata_path(),
+                bincode::serialize(&self.len).map_err(|_| Error::Serde)?,
+            )?;
+            self.len_is_dirty = false;
+        }
+
+        Ok(())
+    }
+
     unsafe fn persist_recursive(&mut self, node: &mut Node<K, V>) -> Result<(), Error>
     where
         for<'de> K: Deserialize<'de> + Serialize,
@@ -29,7 +72,7 @@ impl<K, V> BPTree<K, V> {
             None => return Ok(()),
         };
 
-        fs::create_dir_all(&self.path)?;
+        self.persist_metadata()?;
 
         unsafe { self.persist_recursive((*root.as_ptr()).access_mut(&self.path)?) }
     }
@@ -43,7 +86,7 @@ impl<K, V> BPTree<K, V> {
         let mut key_persisted = false;
         let mut cursor = self.root.ok_or(Error::UnknownKey)?;
 
-        fs::create_dir_all(&self.path)?;
+        self.persist_metadata()?;
 
         while !key_persisted {
             let node = unsafe { (*cursor.as_ptr()).access_mut(&self.path)? };

@@ -22,8 +22,11 @@ const DEFAULT_ORDER: usize = 3;
 pub struct BPTree<K, V> {
     path: PathBuf,
     root: Option<Link<K, V>>,
+    root_is_dirty: bool,
     order: usize,
+    order_is_dirty: bool,
     len: usize,
+    len_is_dirty: bool,
 }
 
 impl<K, V> BPTree<K, V> {
@@ -35,8 +38,11 @@ impl<K, V> BPTree<K, V> {
         Self {
             path: path.as_ref().into(),
             root: None,
+            root_is_dirty: true,
             order,
+            order_is_dirty: true,
             len: 0,
+            len_is_dirty: true,
         }
     }
 
@@ -69,7 +75,7 @@ impl<K, V> BPTree<K, V> {
                 println!(
                     "{:?} {}",
                     node.keys,
-                    if node.dirty { "[dirty]" } else { "[clean]" }
+                    if node.is_dirty { "[dirty]" } else { "[clean]" }
                 );
 
                 for child in &node.children {
@@ -89,7 +95,7 @@ impl<K, V> BPTree<K, V> {
                         print!(", ");
                     }
                 }
-                println!("] {}", if node.dirty { "[dirty]" } else { "[clean]" });
+                println!("] {}", if node.is_dirty { "[dirty]" } else { "[clean]" });
             }
         }
 

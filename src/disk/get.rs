@@ -151,11 +151,11 @@ where
             while let Some(cursor) = self.cursor {
                 match (*cursor.as_ptr()).access_mut(&self.tree.path).unwrap() {
                     Node::Internal(node) => {
-                        node.dirty = true;
+                        node.is_dirty = true;
                         self.cursor = node.parent;
                     }
                     Node::Leaf(node) => {
-                        node.dirty = true;
+                        node.is_dirty = true;
                         self.cursor = node.parent;
                     }
                 }

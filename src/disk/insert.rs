@@ -21,26 +21,33 @@ impl<K, V> BPTree<K, V> {
                     values: vec![value],
                     parent: None,
                     next_leaf: None,
-                    dirty: true,
+                    is_dirty: true,
                 }));
 
                 self.root = Some(new_root);
+                self.root_is_dirty = true;
+
                 self.len += 1;
+                self.len_is_dirty = true;
+
                 return Ok(None);
             }
 
             let mut cursor = self.root.unwrap();
 
             // Descend the tree to the leaf node that the key should go in.
-            while let Node::Internal(node) = (*cursor.as_ptr()).access(&self.path)? {
+            while let Node::Internal(node) = (*cursor.as_ptr()).access_mut(&self.path)? {
                 let index = match node.keys.binary_search(&key) {
                     Ok(index) => index + 1,
                     Err(index) => index,
                 };
                 cursor = node.children[index];
+                node.is_dirty = true;
             }
 
             if let Node::Leaf(node) = (*cursor.as_ptr()).access_mut(&self.path)? {
+                node.is_dirty = true;
+
                 // Check if we already have a copy of this key and just need to
                 // swap in the updated value.
                 match node.keys.binary_search(&key) {
@@ -53,7 +60,9 @@ impl<K, V> BPTree<K, V> {
                         // The key doesn't exist, so insert it.
                         node.keys.insert(index, key);
                         node.values.insert(index, value);
+
                         self.len += 1;
+                        self.len_is_dirty = true;
 
                         // We're done if the node isn't overfull.
                         if !node.is_overfull(self.order) {
@@ -73,7 +82,7 @@ impl<K, V> BPTree<K, V> {
                             values: sibling_values,
                             parent: node.parent,
                             next_leaf: node.next_leaf,
-                            dirty: true,
+                            is_dirty: true,
                         }));
 
                         // Connect to the sibling.
@@ -86,7 +95,7 @@ impl<K, V> BPTree<K, V> {
                                 keys: vec![split_key],
                                 children: vec![cursor, sibling],
                                 parent: None,
-                                dirty: true,
+                                is_dirty: true,
                             }));
 
                             // Connect the cursor to the new root.
@@ -103,6 +112,7 @@ impl<K, V> BPTree<K, V> {
 
                             // Use the new root.
                             self.root = Some(new_root);
+                            self.root_is_dirty = true;
                         } else {
                             // Insert to the parent.
                             self.insert_internal(split_key, node.parent.unwrap(), sibling)?;
@@ -127,6 +137,8 @@ impl<K, V> BPTree<K, V> {
     {
         unsafe {
             if let Node::Internal(node) = (*cursor.as_ptr()).access_mut(&self.path)? {
+                node.is_dirty = true;
+
                 // Find where the key should go.
                 let index = match node.keys.binary_search(&key) {
                     Ok(index) => index + 1,
@@ -154,7 +166,7 @@ impl<K, V> BPTree<K, V> {
                     keys: sibling_keys,
                     children: sibling_children,
                     parent: node.parent,
-                    dirty: true,
+                    is_dirty: true,
                 }));
 
                 // Fix up the parent for the sibling children.
@@ -163,9 +175,11 @@ impl<K, V> BPTree<K, V> {
                         match (*child.as_ptr()).access_mut(&self.path)? {
                             Node::Internal(child) => {
                                 child.parent = Some(sibling);
+                                child.is_dirty = true;
                             }
                             Node::Leaf(child) => {
                                 child.parent = Some(sibling);
+                                child.is_dirty = true;
                             }
                         }
                     }
@@ -178,7 +192,7 @@ impl<K, V> BPTree<K, V> {
                         keys: vec![split_key],
                         children: vec![cursor, sibling],
                         parent: None,
-                        dirty: true,
+                        is_dirty: true,
                     }));
 
                     if let Node::Internal(sibling) = (*sibling.as_ptr()).access_mut(&self.path)? {
@@ -186,7 +200,9 @@ impl<K, V> BPTree<K, V> {
                     }
 
                     node.parent = Some(new_root);
+
                     self.root = Some(new_root);
+                    self.root_is_dirty = true;
                 } else {
                     // Recursively insert the split key into the parent.
                     self.insert_internal(split_key, node.parent.unwrap(), sibling)?;
