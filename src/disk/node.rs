@@ -100,8 +100,8 @@ impl<K, V> NodeRef<K, V> {
             Self::Loaded(node) => Ok(node),
             Self::Unloaded(uuid) => {
                 let path = path![path / uuid.to_string()];
-                let data = fs::read(&path)?;
-                let node = bincode::deserialize(&data).map_err(|_| Error::Serde)?;
+                let ser = fs::read(&path)?;
+                let node = bincode::deserialize(&ser).map_err(|_| Error::Serde)?;
                 *self = Self::Loaded(node);
                 self.access(&path)
             }
@@ -197,12 +197,37 @@ pub(crate) enum Node<K, V> {
     Leaf(Leaf<K, V>),
 }
 
+impl<K, V> Node<K, V> {
+    pub fn persist(&mut self, path: &Path) -> Result<(), Error>
+    where
+        K: Serialize,
+        V: Serialize,
+    {
+        let ser = bincode::serialize(self).map_err(|_| Error::Serde)?;
+
+        let path = match self {
+            Node::Internal(node) => path![path / node.uuid.to_string()],
+            Node::Leaf(node) => path![path / node.uuid.to_string()],
+        };
+
+        fs::write(&path, &ser)?;
+
+        match self {
+            Node::Internal(node) => node.dirty = false,
+            Node::Leaf(node) => node.dirty = false,
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Deserialize, Serialize)]
 pub(crate) struct Internal<K, V> {
     pub(crate) uuid: Uuid,
     pub(crate) keys: Vec<K>,
     pub(crate) children: Vec<Link<K, V>>,
     pub(crate) parent: Option<Link<K, V>>,
+    #[serde(skip)]
     pub(crate) dirty: bool,
 }
 
@@ -227,6 +252,7 @@ pub(crate) struct Leaf<K, V> {
     pub(crate) values: Vec<V>,
     pub(crate) parent: Option<Link<K, V>>,
     pub(crate) next_leaf: Option<Link<K, V>>,
+    #[serde(skip)]
     pub(crate) dirty: bool,
 }
 

@@ -67,9 +67,9 @@ impl<K, V> BPTree<K, V> {
         match node {
             Node::Internal(node) => {
                 println!(
-                    "{:?}{}",
+                    "{:?} {}",
                     node.keys,
-                    if node.dirty { " [dirty]" } else { "" }
+                    if node.dirty { "[dirty]" } else { "[clean]" }
                 );
 
                 for child in &node.children {
@@ -89,7 +89,7 @@ impl<K, V> BPTree<K, V> {
                         print!(", ");
                     }
                 }
-                println!("]{}", if node.dirty { " [dirty]" } else { "" });
+                println!("] {}", if node.dirty { "[dirty]" } else { "[clean]" });
             }
         }
 
@@ -154,6 +154,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
 
     #[test]
@@ -188,10 +190,14 @@ mod tests {
         //     tree.pretty_print()?;
         // }
 
+        tree.persist()?;
         tree.pretty_print()?;
+
         let x = tree.get_mut(&4)?;
         *x.unwrap() += 1;
         tree.pretty_print()?;
+
+        let _ = fs::remove_dir_all("/tmp/bptree");
 
         Ok(())
     }
