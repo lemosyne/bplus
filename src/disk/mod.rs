@@ -190,19 +190,24 @@ mod tests {
             println!("{n:?}");
         }
 
-        // for n in [25, 4, 16, 9, 20, 10, 11, 12] {
-        //     println!("Delete {n}:");
-        //     tree.remove_entry(&n)?;
-        //     tree.pretty_print()?;
-        // }
+        tree.persist()?;
+        tree.pretty_print()?;
+
+        let x = tree.get_mut(&4)?;
+        *x.unwrap() += 1;
+        tree.pretty_print()?;
 
         tree.persist()?;
         tree.pretty_print()?;
 
-        // let x = tree.get_mut(&4)?;
-        // let y = tree.get_mut(&5)?;
-        // *x.unwrap() += 1;
-        // tree.pretty_print()?;
+        for n in [25, 4, 16, 9, 20, 10, 11, 12] {
+            println!("Delete {n}:");
+            tree.remove_entry(&n)?;
+            tree.pretty_print()?;
+        }
+
+        tree.persist()?;
+        tree.pretty_print()?;
 
         let _ = fs::remove_dir_all("/tmp/bptree");
 
