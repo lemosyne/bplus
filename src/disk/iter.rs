@@ -28,6 +28,18 @@ impl<K, V> BPTree<K, V> {
             tree: self,
         }
     }
+
+    pub fn keys(&self) -> Keys<K, V> {
+        Keys(self.iter())
+    }
+
+    pub fn values(&self) -> Values<K, V> {
+        Values(self.iter())
+    }
+
+    pub fn values_mut(&mut self) -> ValuesMut<K, V> {
+        ValuesMut(self.iter_mut())
+    }
 }
 
 impl<'a, K, V> IntoIterator for &'a BPTree<K, V>
@@ -114,6 +126,20 @@ where
             }
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+}
+
+impl<'a, K, V> ExactSizeIterator for Iter<'a, K, V>
+where
+    for<'de> K: Deserialize<'de>,
+    for<'de> V: Deserialize<'de>,
+{
+    fn len(&self) -> usize {
+        self.len
+    }
 }
 
 pub struct IterMut<'a, K, V> {
@@ -186,5 +212,64 @@ where
                 }
             }
         }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+}
+
+impl<'a, K, V> ExactSizeIterator for IterMut<'a, K, V>
+where
+    for<'de> K: Deserialize<'de>,
+    for<'de> V: Deserialize<'de>,
+{
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+pub struct Keys<'a, K, V>(pub(crate) Iter<'a, K, V>);
+
+impl<'a, K, V> Iterator for Keys<'a, K, V>
+where
+    for<'de> K: Deserialize<'de>,
+    for<'de> V: Deserialize<'de>,
+{
+    type Item = Result<&'a K, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|res| res.and_then(|(key, _)| Ok(key)))
+    }
+}
+
+pub struct Values<'a, K, V>(pub(crate) Iter<'a, K, V>);
+
+impl<'a, K, V> Iterator for Values<'a, K, V>
+where
+    for<'de> K: Deserialize<'de>,
+    for<'de> V: Deserialize<'de>,
+{
+    type Item = Result<&'a V, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0
+            .next()
+            .map(|res| res.and_then(|(_, value)| Ok(value)))
+    }
+}
+
+pub struct ValuesMut<'a, K, V>(pub(crate) IterMut<'a, K, V>);
+
+impl<'a, K, V> Iterator for ValuesMut<'a, K, V>
+where
+    for<'de> K: Deserialize<'de>,
+    for<'de> V: Deserialize<'de>,
+{
+    type Item = Result<&'a mut V, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0
+            .next()
+            .map(|res| res.and_then(|(_, value)| Ok(value)))
     }
 }
