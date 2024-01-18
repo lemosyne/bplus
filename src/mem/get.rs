@@ -37,7 +37,7 @@ impl<K, V> BPTreeMap<K, V> {
         self.get_key_value(key).map(|(_, value)| value)
     }
 
-    pub fn get_key_value_mut<Q>(&self, key: &Q) -> Option<(&K, &mut V)>
+    pub fn get_key_value_mut<Q>(&mut self, key: &Q) -> Option<(&K, &mut V)>
     where
         K: Borrow<Q>,
         Q: Ord,

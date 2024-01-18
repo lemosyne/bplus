@@ -66,7 +66,12 @@ impl<K, V> BPTree<K, V> {
 
         match node {
             Node::Internal(node) => {
-                println!("{:?}", node.keys);
+                println!(
+                    "{:?}{}",
+                    node.keys,
+                    if node.dirty { " [dirty]" } else { "" }
+                );
+
                 for child in &node.children {
                     unsafe {
                         self.pretty_print_recursive(
@@ -77,7 +82,14 @@ impl<K, V> BPTree<K, V> {
                 }
             }
             Node::Leaf(node) => {
-                println!("{:?}", node.keys);
+                print!("[");
+                for (i, (key, value)) in node.keys.iter().zip(node.values.iter()).enumerate() {
+                    print!("{key:?}: {value:?}");
+                    if i + 1 != node.keys.len() {
+                        print!(", ");
+                    }
+                }
+                println!("]{}", if node.dirty { " [dirty]" } else { "" });
             }
         }
 
@@ -150,7 +162,7 @@ mod tests {
 
         for i in [25, 4, 1, 16, 9, 20, 13, 15, 10, 11, 12] {
             println!("Insert {i}:");
-            tree.insert(i, i.to_string())?;
+            tree.insert(i, i)?;
             tree.pretty_print()?;
         }
 
@@ -170,11 +182,16 @@ mod tests {
             println!("{n:?}");
         }
 
-        for n in [25, 4, 16, 9, 20, 10, 11, 12] {
-            println!("Delete {n}:");
-            tree.remove_entry(&n)?;
-            tree.pretty_print()?;
-        }
+        // for n in [25, 4, 16, 9, 20, 10, 11, 12] {
+        //     println!("Delete {n}:");
+        //     tree.remove_entry(&n)?;
+        //     tree.pretty_print()?;
+        // }
+
+        tree.pretty_print()?;
+        let x = tree.get_mut(&4)?;
+        *x.unwrap() += 1;
+        tree.pretty_print()?;
 
         Ok(())
     }

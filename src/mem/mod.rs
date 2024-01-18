@@ -57,6 +57,7 @@ impl<K, V> BPTreeMap<K, V> {
         match node {
             Node::Internal(node) => {
                 println!("{:?}", node.keys);
+
                 for child in &node.children {
                     unsafe {
                         self.pretty_print_recursive(&(*child.as_ptr()), depth + 1);
@@ -64,7 +65,14 @@ impl<K, V> BPTreeMap<K, V> {
                 }
             }
             Node::Leaf(node) => {
-                println!("{:?}", node.keys);
+                print!("[");
+                for (i, (key, value)) in node.keys.iter().zip(node.values.iter()).enumerate() {
+                    print!("{key:?}: {value:?}");
+                    if i + 1 != node.keys.len() {
+                        print!(", ");
+                    }
+                }
+                println!("]");
             }
         }
     }
