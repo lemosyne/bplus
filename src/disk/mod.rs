@@ -161,18 +161,18 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use super::*;
+    use std::fs;
 
     #[test]
     fn it_works() -> Result<(), Error> {
         let mut tree = BPTree::new("/tmp/bptree");
 
-        for i in [25, 4, 1, 16, 9, 20, 13, 15, 10, 11, 12] {
-            println!("Insert {i}:");
-            tree.insert(i, i)?;
+        for n in [25, 4, 1, 16, 9, 20, 13, 15, 10, 11, 12] {
+            println!("Insert {n}:");
+            tree.insert(n, n)?;
             tree.pretty_print()?;
+            assert_eq!(tree.get(&n)?, Some(&n));
         }
 
         for n in tree.iter().filter_map(Result::ok) {
@@ -182,8 +182,9 @@ mod tests {
 
         for n in [13, 15, 1] {
             println!("Delete {n}:");
-            tree.remove_entry(&n)?;
+            assert_eq!(tree.remove_entry(&n)?, Some((n, n)));
             tree.pretty_print()?;
+            assert_eq!(tree.get(&n)?, None);
         }
         println!("{:?}", tree);
 
@@ -211,6 +212,29 @@ mod tests {
         tree.pretty_print()?;
 
         let _ = fs::remove_dir_all("/tmp/bptree");
+
+        Ok(())
+    }
+
+    #[test]
+    fn reload() -> Result<(), Error> {
+        let _ = fs::remove_dir_all("/tmp/bptree-reload");
+
+        let mut tree: BPTree<usize, usize> = BPTree::new("/tmp/bptree-reload");
+
+        for n in 0..10 {
+            tree.insert(n, n)?;
+        }
+
+        tree.persist()?;
+
+        let tree: BPTree<usize, usize> = BPTree::load("/tmp/bptree-reload")?;
+
+        for n in 0..10 {
+            assert_eq!(tree.get(&n)?, Some(&n));
+        }
+
+        println!("{tree:?}");
 
         Ok(())
     }
