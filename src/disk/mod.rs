@@ -1,5 +1,6 @@
 pub mod error;
 mod get;
+mod guard;
 mod insert;
 mod iter;
 mod node;

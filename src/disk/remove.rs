@@ -77,7 +77,7 @@ impl<K, V> BPTree<K, V> {
                                 let max_value = left_sibling.values.pop().unwrap();
 
                                 // The max key/value pair from the left sibling
-                                // is smaller thany any key/value in the cursor
+                                // is smaller than any key/value in the cursor
                                 // node.
                                 node.keys.insert(0, max_key);
                                 node.values.insert(0, max_value);

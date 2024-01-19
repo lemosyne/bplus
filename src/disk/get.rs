@@ -1,16 +1,6 @@
+use super::{error::Error, guard::ValueMutationGuard, node::Node, BPTree};
 use serde::Deserialize;
-
-use super::{
-    error::Error,
-    node::{Link, Node},
-    BPTree,
-};
-use std::{
-    borrow::Borrow,
-    fmt::{self, Debug},
-    ops::{Deref, DerefMut},
-    path::PathBuf,
-};
+use std::borrow::Borrow;
 
 impl<K, V> BPTree<K, V> {
     pub fn get_key_value<Q>(&self, key: &Q) -> Result<Option<(&K, &V)>, Error>
@@ -107,62 +97,5 @@ impl<K, V> BPTree<K, V> {
         Q: Ord,
     {
         Ok(self.get_key_value_mut(key)?.map(|(_, value)| value))
-    }
-}
-
-pub struct ValueMutationGuard<'a, K, V>
-where
-    for<'de> K: Deserialize<'de>,
-    for<'de> V: Deserialize<'de>,
-{
-    value: &'a mut V,
-    cursor: Link<K, V>,
-    path: &'a PathBuf,
-}
-
-impl<'a, K, V> Deref for ValueMutationGuard<'a, K, V>
-where
-    for<'de> K: Deserialize<'de>,
-    for<'de> V: Deserialize<'de>,
-{
-    type Target = V;
-
-    fn deref(&self) -> &Self::Target {
-        self.value
-    }
-}
-
-impl<'a, K, V> DerefMut for ValueMutationGuard<'a, K, V>
-where
-    for<'de> K: Deserialize<'de>,
-    for<'de> V: Deserialize<'de>,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.value
-    }
-}
-
-impl<'a, K, V> Drop for ValueMutationGuard<'a, K, V>
-where
-    for<'de> K: Deserialize<'de>,
-    for<'de> V: Deserialize<'de>,
-{
-    fn drop(&mut self) {
-        unsafe {
-            match (*self.cursor.as_ptr()).access_mut(&self.path).unwrap() {
-                Node::Internal(node) => node.is_dirty = true,
-                Node::Leaf(node) => node.is_dirty = true,
-            }
-        }
-    }
-}
-
-impl<'a, K, V> Debug for ValueMutationGuard<'a, K, V>
-where
-    for<'de> K: Deserialize<'de>,
-    for<'de> V: Deserialize<'de> + Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.value)
     }
 }

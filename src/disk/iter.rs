@@ -1,10 +1,11 @@
-use serde::Deserialize;
-
 use super::{
     error::Error,
+    guard::ValueMutationGuard,
     node::{Link, Node},
     BPTree,
 };
+use serde::Deserialize;
+use std::path::PathBuf;
 
 impl<K, V> BPTree<K, V> {
     pub fn iter(&self) -> Iter<K, V> {
@@ -14,7 +15,7 @@ impl<K, V> BPTree<K, V> {
             len: self.len,
             errored: false,
             at_leaves: false,
-            tree: self,
+            path: &self.path,
         }
     }
 
@@ -25,7 +26,7 @@ impl<K, V> BPTree<K, V> {
             len: self.len,
             errored: false,
             at_leaves: false,
-            tree: self,
+            path: &self.path,
         }
     }
 
@@ -61,13 +62,13 @@ pub struct Iter<'a, K, V> {
     pub(crate) len: usize,
     pub(crate) errored: bool,
     pub(crate) at_leaves: bool,
-    pub(crate) tree: &'a BPTree<K, V>,
+    pub(crate) path: &'a PathBuf,
 }
 
 impl<'a, K, V> Iterator for Iter<'a, K, V>
 where
-    for<'de> K: Deserialize<'de>,
-    for<'de> V: Deserialize<'de>,
+    for<'de> K: Deserialize<'de> + 'a,
+    for<'de> V: Deserialize<'de> + 'a,
 {
     type Item = Result<(&'a K, &'a V), Error>;
 
@@ -81,7 +82,7 @@ where
         if !self.at_leaves {
             loop {
                 unsafe {
-                    match (*cursor.as_ptr()).access(&self.tree.path) {
+                    match (*cursor.as_ptr()).access(&self.path) {
                         Ok(node) => match node {
                             Node::Internal(node) => {
                                 cursor = node.children[0];
@@ -102,7 +103,7 @@ where
         }
 
         unsafe {
-            match (*cursor.as_ptr()).access(&self.tree.path) {
+            match (*cursor.as_ptr()).access(&self.path) {
                 Ok(node) => match node {
                     Node::Internal(_) => None,
                     Node::Leaf(node) => {
@@ -134,8 +135,8 @@ where
 
 impl<'a, K, V> ExactSizeIterator for Iter<'a, K, V>
 where
-    for<'de> K: Deserialize<'de>,
-    for<'de> V: Deserialize<'de>,
+    for<'de> K: Deserialize<'de> + 'a,
+    for<'de> V: Deserialize<'de> + 'a,
 {
     fn len(&self) -> usize {
         self.len
@@ -148,15 +149,15 @@ pub struct IterMut<'a, K, V> {
     pub(crate) len: usize,
     pub(crate) errored: bool,
     pub(crate) at_leaves: bool,
-    pub(crate) tree: &'a mut BPTree<K, V>,
+    pub(crate) path: &'a PathBuf,
 }
 
 impl<'a, K, V> Iterator for IterMut<'a, K, V>
 where
-    for<'de> K: Deserialize<'de>,
-    for<'de> V: Deserialize<'de>,
+    for<'de> K: Deserialize<'de> + 'a,
+    for<'de> V: Deserialize<'de> + 'a,
 {
-    type Item = Result<(&'a K, &'a mut V), Error>;
+    type Item = Result<(&'a K, ValueMutationGuard<'a, K, V>), Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.len == 0 || self.errored {
@@ -168,7 +169,7 @@ where
         if !self.at_leaves {
             loop {
                 unsafe {
-                    match (*cursor.as_ptr()).access(&self.tree.path) {
+                    match (*cursor.as_ptr()).access(&self.path) {
                         Ok(node) => match node {
                             Node::Internal(node) => {
                                 cursor = node.children[0];
@@ -189,11 +190,18 @@ where
         }
 
         unsafe {
-            match (*cursor.as_ptr()).access_mut(&self.tree.path) {
+            match (*cursor.as_ptr()).access_mut(&self.path) {
                 Ok(node) => match node {
                     Node::Internal(_) => None,
                     Node::Leaf(node) => {
-                        let result = (&node.keys[self.index], &mut node.values[self.index]);
+                        let result = (
+                            &node.keys[self.index],
+                            ValueMutationGuard {
+                                value: &mut node.values[self.index],
+                                cursor,
+                                path: &self.path,
+                            },
+                        );
 
                         self.len -= 1;
                         self.index += 1;
@@ -221,8 +229,8 @@ where
 
 impl<'a, K, V> ExactSizeIterator for IterMut<'a, K, V>
 where
-    for<'de> K: Deserialize<'de>,
-    for<'de> V: Deserialize<'de>,
+    for<'de> K: Deserialize<'de> + 'a,
+    for<'de> V: Deserialize<'de> + 'a,
 {
     fn len(&self) -> usize {
         self.len
@@ -232,8 +240,8 @@ pub struct Keys<'a, K, V>(pub(crate) Iter<'a, K, V>);
 
 impl<'a, K, V> Iterator for Keys<'a, K, V>
 where
-    for<'de> K: Deserialize<'de>,
-    for<'de> V: Deserialize<'de>,
+    for<'de> K: Deserialize<'de> + 'a,
+    for<'de> V: Deserialize<'de> + 'a,
 {
     type Item = Result<&'a K, Error>;
 
@@ -246,8 +254,8 @@ pub struct Values<'a, K, V>(pub(crate) Iter<'a, K, V>);
 
 impl<'a, K, V> Iterator for Values<'a, K, V>
 where
-    for<'de> K: Deserialize<'de>,
-    for<'de> V: Deserialize<'de>,
+    for<'de> K: Deserialize<'de> + 'a,
+    for<'de> V: Deserialize<'de> + 'a,
 {
     type Item = Result<&'a V, Error>;
 
@@ -262,10 +270,10 @@ pub struct ValuesMut<'a, K, V>(pub(crate) IterMut<'a, K, V>);
 
 impl<'a, K, V> Iterator for ValuesMut<'a, K, V>
 where
-    for<'de> K: Deserialize<'de>,
-    for<'de> V: Deserialize<'de>,
+    for<'de> K: Deserialize<'de> + 'a,
+    for<'de> V: Deserialize<'de> + 'a,
 {
-    type Item = Result<&'a mut V, Error>;
+    type Item = Result<ValueMutationGuard<'a, K, V>, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0

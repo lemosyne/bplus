@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use super::{
     node::{Link, Node},
     BPTreeMap,
@@ -10,7 +12,7 @@ impl<K, V> BPTreeMap<K, V> {
             index: 0,
             len: self.len,
             at_leaves: false,
-            _tree: self,
+            _lifetime: PhantomData,
         }
     }
 
@@ -20,7 +22,7 @@ impl<K, V> BPTreeMap<K, V> {
             index: 0,
             len: self.len,
             at_leaves: false,
-            _tree: self,
+            _lifetime: PhantomData,
         }
     }
 
@@ -42,7 +44,7 @@ pub struct Iter<'a, K, V> {
     pub(crate) index: usize,
     pub(crate) len: usize,
     pub(crate) at_leaves: bool,
-    pub(crate) _tree: &'a BPTreeMap<K, V>,
+    pub(crate) _lifetime: PhantomData<(&'a K, &'a V)>,
 }
 
 impl<'a, K, V> IntoIterator for &'a BPTreeMap<K, V> {
@@ -54,7 +56,11 @@ impl<'a, K, V> IntoIterator for &'a BPTreeMap<K, V> {
     }
 }
 
-impl<'a, K, V> Iterator for Iter<'a, K, V> {
+impl<'a, K, V> Iterator for Iter<'a, K, V>
+where
+    K: 'a,
+    V: 'a,
+{
     type Item = (&'a K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -110,7 +116,7 @@ pub struct IterMut<'a, K, V> {
     pub(crate) index: usize,
     pub(crate) len: usize,
     pub(crate) at_leaves: bool,
-    pub(crate) _tree: &'a mut BPTreeMap<K, V>,
+    pub(crate) _lifetime: PhantomData<(&'a K, &'a mut V)>,
 }
 
 impl<'a, K, V> IntoIterator for &'a mut BPTreeMap<K, V> {
